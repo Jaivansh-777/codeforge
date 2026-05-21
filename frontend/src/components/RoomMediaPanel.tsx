@@ -25,7 +25,10 @@ const STUN_SERVERS: RTCConfiguration = {
 
 interface PeerData {
   connection: RTCPeerConnection;
-  streams: MediaStream[];
+}
+
+function log(...args: any[]) {
+  console.log('[WebRTC]', ...args);
 }
 
 export default function RoomMediaPanel({ socket, socketId, participants, userName }: Props) {
@@ -39,14 +42,20 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, PeerData>>(new Map());
+  const remoteAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const socketRef = useRef<Socket | null>(null);
+  const socketIdRef = useRef<string | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const speakingIntervalRef = useRef<number | null>(null);
+  const participantsRef = useRef<Participant[]>([]);
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
 
-  const otherParticipants = participants.filter(p => p.socketId !== socketId);
+  socketRef.current = socket;
+  socketIdRef.current = socketId;
+  participantsRef.current = participants;
 
-  // Speaking detection
+  // --- Speaking detection ---
   const startSpeakingDetection = useCallback((stream: MediaStream) => {
     try {
       const ctx = new AudioContext();
@@ -81,88 +90,213 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     setSpeaking(false);
   }, []);
 
-  // Handle incoming signals
+  // --- Helper: add local audio tracks to a PC (avoid duplicates) ---
+  function addLocalTracks(pc: RTCPeerConnection) {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    for (const track of stream.getAudioTracks()) {
+      const existing = pc.getSenders().find(s => s.track?.kind === 'audio' && s.track.enabled !== undefined);
+      if (!existing) {
+        pc.addTrack(track, stream);
+        log('added local audio track to PC');
+      }
+    }
+  }
+
+  // --- Create or get a PeerConnection for a target ---
+  function ensurePC(targetId: string): PeerData {
+    const existing = peersRef.current.get(targetId);
+    if (existing) {
+      const state = existing.connection.connectionState;
+      if (state === 'new' || state === 'connecting' || state === 'connected') {
+        return existing;
+      }
+      // Dead connection, close and recreate
+      existing.connection.close();
+      peersRef.current.delete(targetId);
+    }
+
+    const pc = new RTCPeerConnection(STUN_SERVERS);
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate && socketRef.current) {
+        socketRef.current.emit('signal', {
+          to: targetId,
+          signal: { type: 'ice-candidate', candidate: e.candidate },
+        });
+      }
+    };
+
+    pc.ontrack = (e) => {
+      if (!e.streams[0]) return;
+      log('remote track received from', targetId);
+
+      let audioEl = remoteAudioRefs.current.get(targetId);
+      if (!audioEl) {
+        audioEl = document.createElement('audio');
+        audioEl.autoplay = true;
+        audioEl.style.display = 'none';
+        document.body.appendChild(audioEl);
+        remoteAudioRefs.current.set(targetId, audioEl);
+      }
+
+      audioEl.srcObject = e.streams[0];
+      audioEl.play().catch((err: any) => {
+        if (err.name !== 'NotAllowedError') {
+          console.warn('[WebRTC] audio play error:', err);
+        }
+      });
+      log('remote audio playing from', targetId);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      log('ICE state with', targetId, ':', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+        removePeer(targetId);
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      log('connection state with', targetId, ':', pc.connectionState);
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        removePeer(targetId);
+      }
+    };
+
+    const peerData: PeerData = { connection: pc };
+    peersRef.current.set(targetId, peerData);
+    log('PC created for', targetId);
+    return peerData;
+  }
+
+  function removePeer(targetId: string) {
+    const peer = peersRef.current.get(targetId);
+    if (peer) {
+      peer.connection.close();
+      peersRef.current.delete(targetId);
+    }
+    const audioEl = remoteAudioRefs.current.get(targetId);
+    if (audioEl) {
+      audioEl.pause();
+      audioEl.srcObject = null;
+      audioEl.remove();
+      remoteAudioRefs.current.delete(targetId);
+    }
+    log('removed peer', targetId);
+  }
+
+  // --- Send offer to a specific peer ---
+  async function sendOffer(targetId: string) {
+    const peer = ensurePC(targetId);
+    const pc = peer.connection;
+
+    addLocalTracks(pc);
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      log('sent offer to', targetId);
+      socketRef.current?.emit('signal', {
+        to: targetId,
+        signal: { type: 'offer', sdp: pc.localDescription },
+      });
+    } catch (e) {
+      console.error('[WebRTC] createOffer error:', e);
+    }
+  }
+
+  // --- Connect to all current peers ---
+  async function connectToAllPeers() {
+    const sid = socketIdRef.current;
+    if (!sid) return;
+    const targets = participantsRef.current.filter(p => p.socketId !== sid);
+    log('connecting to', targets.length, 'peers');
+    for (const target of targets) {
+      await sendOffer(target.socketId);
+    }
+  }
+
+  // --- Signal handler ---
   useEffect(() => {
     if (!socket) return;
 
     const handleSignal = async ({ from, signal }: { from: string; signal: any }) => {
-      if (from === socketId) return;
+      if (from === socketIdRef.current) return;
+      log('received', signal.type, 'from', from);
 
-      let peer = peersRef.current.get(from);
-      if (!peer) {
-        peer = createPeerConnection(from);
-      }
-
+      const peer = ensurePC(from);
       const pc = peer.connection;
 
       try {
         if (signal.type === 'offer') {
+          // Glare handling: if we have a local offer pending, rollback
+          if (pc.signalingState === 'have-local-offer') {
+            log('glare: rolling back local offer');
+            await pc.setLocalDescription({ type: 'rollback' as unknown as RTCSdpType });
+          }
+
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          log('set remote description (offer)');
+
+          // Add local tracks if available
+          addLocalTracks(pc);
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
+          log('sent answer to', from);
           socket.emit('signal', { to: from, signal: { type: 'answer', sdp: pc.localDescription } });
+
         } else if (signal.type === 'answer') {
-          await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-        } else if (signal.type === 'ice-candidate' && signal.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          if (pc.signalingState === 'have-local-offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+            log('set remote description (answer)');
+          }
+
+        } else if (signal.type === 'ice-candidate') {
+          if (signal.candidate && pc.remoteDescription) {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+            log('added ICE candidate');
+          }
         }
       } catch (e) {
-        console.error('[WebRTC] Signal error:', e);
+        console.error('[WebRTC] signal error:', e);
       }
     };
 
     socket.on('signal', handleSignal);
     return () => { socket.off('signal', handleSignal); };
-  }, [socket, socketId]);
+  }, [socket]);
 
-  // Cleanup on unmount
+  // --- Cleanup on unmount ---
   useEffect(() => {
     return () => {
       cleanupAll();
     };
   }, []);
 
-  const createPeerConnection = useCallback((targetId: string): PeerData => {
-    const pc = new RTCPeerConnection(STUN_SERVERS);
+  // --- Cleanup helper ---
+  function cleanupAll() {
+    Array.from(peersRef.current.keys()).forEach(id => {
+      removePeer(id);
+    });
+    peersRef.current.clear();
 
-    pc.onicecandidate = (e) => {
-      if (e.candidate && socket) {
-        socket.emit('signal', { to: targetId, signal: { type: 'ice-candidate', candidate: e.candidate } });
-      }
-    };
-
-    pc.ontrack = () => {};
+    Array.from(remoteAudioRefs.current.entries()).forEach(([id, el]) => {
+      el.pause();
+      el.srcObject = null;
+      el.remove();
+    });
+    remoteAudioRefs.current.clear();
 
     if (localStreamRef.current) {
-      for (const track of localStreamRef.current.getTracks()) {
-        pc.addTrack(track, localStreamRef.current);
-      }
+      localStreamRef.current.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
     }
+    stopSpeakingDetection();
+    log('cleaned up all');
+  }
 
-    const peerData: PeerData = { connection: pc, streams: [] };
-    peersRef.current.set(targetId, peerData);
-    return peerData;
-  }, [socket]);
-
-  const sendOffersToAll = useCallback(async () => {
-    if (!socket || !socketId) return;
-
-    const targets = participants.filter(p => p.socketId !== socketId);
-
-    for (const target of targets) {
-      const peer = createPeerConnection(target.socketId);
-      const pc = peer.connection;
-
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('signal', { to: target.socketId, signal: { type: 'offer', sdp: pc.localDescription } });
-      } catch (e) {
-        console.error('[WebRTC] Offer error to', target.socketId, e);
-      }
-    }
-  }, [socket, socketId, participants, createPeerConnection]);
-
+  // --- Join Audio ---
   const joinAudio = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -179,11 +313,11 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       setMediaActive(true);
       startSpeakingDetection(stream);
 
-      if (socket) {
-        socket.emit('media-state', { enabled: { audio: true, video: false } });
+      if (socketRef.current) {
+        socketRef.current.emit('media-state', { enabled: { audio: true, video: false } });
       }
 
-      await sendOffersToAll();
+      await connectToAllPeers();
     } catch (e: any) {
       const msg = e.message || 'Could not access microphone';
       setError(msg);
@@ -191,8 +325,9 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     } finally {
       setLoading(false);
     }
-  }, [socket, sendOffersToAll, startSpeakingDetection]);
+  }, [startSpeakingDetection]);
 
+  // --- Toggle Mic ---
   const toggleMic = useCallback(() => {
     if (!localStreamRef.current) return;
     const audioTracks = localStreamRef.current.getAudioTracks();
@@ -202,50 +337,47 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       setSpeaking(false);
     }
 
-    if (socket) {
-      socket.emit('media-state', { enabled: { audio: !micMuted, video: false } });
+    if (socketRef.current) {
+      socketRef.current.emit('media-state', { enabled: { audio: !micMuted, video: false } });
     }
-  }, [micMuted, socket]);
+  }, [micMuted]);
 
+  // --- Leave Audio ---
   const leaveAudio = useCallback(() => {
-    stopSpeakingDetection();
     cleanupAll();
     setMediaActive(false);
     setMicMuted(true);
     setError('');
 
-    if (socket) {
-      socket.emit('media-state', { enabled: { audio: false, video: false } });
+    if (socketRef.current) {
+      socketRef.current.emit('media-state', { enabled: { audio: false, video: false } });
     }
-  }, [socket, stopSpeakingDetection]);
+  }, []);
 
-  function cleanupAll() {
-    Array.from(peersRef.current.values()).forEach((peer) => {
-      peer.connection.close();
-    });
-    peersRef.current.clear();
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(t => t.stop());
-      localStreamRef.current = null;
-    }
-  }
-
-  // Handle peers leaving
+  // --- Handle peers leaving ---
   useEffect(() => {
     if (!socket) return;
     const handleUserLeft = ({ socketId: leftId }: { socketId: string }) => {
-      const peer = peersRef.current.get(leftId);
-      if (peer) {
-        peer.connection.close();
-        peersRef.current.delete(leftId);
-      }
+      removePeer(leftId);
     };
     socket.on('user-left', handleUserLeft);
     return () => { socket.off('user-left', handleUserLeft); };
   }, [socket]);
 
-  // Auto-minimize on mobile
+  // --- Connect to new participants who join while in-call ---
+  useEffect(() => {
+    if (!mediaActive) return;
+    const sid = socketIdRef.current;
+    if (!sid) return;
+
+    for (const p of participants) {
+      if (p.socketId !== sid && !peersRef.current.has(p.socketId)) {
+        sendOffer(p.socketId);
+      }
+    }
+  }, [participants, mediaActive]);
+
+  // --- Auto-minimize on mobile ---
   useEffect(() => {
     if (!mediaActive) return;
     const check = () => setMinimized(window.innerWidth < 640);
@@ -254,7 +386,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     return () => window.removeEventListener('resize', check);
   }, [mediaActive]);
 
-  // Drag handlers
+  // --- Drag handlers ---
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     dragRef.current.isDragging = true;
