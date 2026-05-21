@@ -5,9 +5,10 @@ import { useParams } from 'next/navigation';
 import {
   Play, Copy, Link, Users, Wifi, WifiOff, Lock, Unlock, Crown,
   Terminal, FileCode, PanelRightClose, PanelRightOpen,
-  Loader2, AlertTriangle, X, MessageSquare,
+  Loader2, AlertTriangle, X, MessageSquare, Pen
 } from 'lucide-react';
 import RoomMediaPanel from '@/components/RoomMediaPanel';
+import Whiteboard from '@/components/Whiteboard';
 import toast, { Toaster } from 'react-hot-toast';
 import Editor from '@/components/Editor';
 import LanguageSelector from '@/components/LanguageSelector';
@@ -53,6 +54,8 @@ const CODE_TEMPLATES: Record<string, string> = {
   assembly: `section .data\nmsg db 'Hello',0xa\nlen equ $ - msg\nsection .text\nglobal _start\n_start:\nmov rax,1; mov rdi,1; mov rsi,msg; mov rdx,len; syscall; mov rax,60; xor rdi,rdi; syscall`,
 };
 
+type Tab = 'code' | 'whiteboard';
+
 function RoomContent() {
   const params = useParams();
   const roomId = params.roomId as string;
@@ -63,6 +66,7 @@ function RoomContent() {
   const [hostSocketId, setHostSocketId] = useState<string>('');
   const [socketId, setSocketId] = useState<string | null>(null);
   const [connected, setConnected] = useState(true);
+  const [activeTab, setActiveTab] = useState<Tab>('code');
 
   const [language, setLanguage] = useState('python');
   const [code, setCode] = useState('');
@@ -345,7 +349,7 @@ function RoomContent() {
                 <MessageSquare className="w-3.5 h-3.5" />
               </button>
 
-              {/* Media (audio/video) */}
+              {/* Audio call */}
               <RoomMediaPanel
                 socket={socketRef.current}
                 socketId={socketId}
@@ -362,18 +366,20 @@ function RoomContent() {
                 <Link className="w-3.5 h-3.5" />
               </button>
 
-              {/* Run */}
-              <button
-                onClick={handleRun}
-                disabled={loading || !isHost}
-                className="group relative inline-flex items-center gap-2 px-5 py-2 bg-white text-black text-xs font-bold rounded-xl hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.97]"
-              >
-                {loading ? (
-                  <><Loader2 className="w-3.5 h-3.5 animate-spin relative z-10" /><span className="relative z-10">Running...</span></>
-                ) : (
-                  <><Play className="w-3.5 h-3.5 fill-current relative z-10" /><span className="relative z-10">Run</span></>
-                )}
-              </button>
+              {/* Run (only visible in code tab) */}
+              {activeTab === 'code' && (
+                <button
+                  onClick={handleRun}
+                  disabled={loading || !isHost}
+                  className="group relative inline-flex items-center gap-2 px-5 py-2 bg-white text-black text-xs font-bold rounded-xl hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.97]"
+                >
+                  {loading ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin relative z-10" /><span className="relative z-10">Running...</span></>
+                  ) : (
+                    <><Play className="w-3.5 h-3.5 fill-current relative z-10" /><span className="relative z-10">Run</span></>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -381,7 +387,7 @@ function RoomContent() {
 
       {/* Main area */}
       <div className="relative z-10 flex-1 flex gap-3 sm:gap-4 p-3 sm:p-4 min-h-0 max-w-7xl mx-auto w-full">
-        {/* Left sidebar: participants + toggle */}
+        {/* Left sidebar: participants + chat */}
         <div className={`${showChat ? 'hidden lg:flex' : 'flex'} flex-col gap-3 w-[200px] shrink-0`}>
           <ParticipantsPanel
             participants={participants}
@@ -420,59 +426,100 @@ function RoomContent() {
           </div>
         )}
 
-        {/* Editor */}
-        <div className="flex-1 flex flex-col min-h-0 premium-glass-card rounded-[28px] overflow-hidden border-shine">
-          <div className="flex items-center gap-3 px-5 py-3 border-b border-white/[0.06] bg-white/[0.02] shrink-0">
-            <div className="flex gap-1.5">
-              <div className="w-3 h-3 rounded-full bg-red-500/80 shadow-[0_0_6px_rgba(239,68,68,0.3)]" />
-              <div className="w-3 h-3 rounded-full bg-yellow-500/80 shadow-[0_0_6px_rgba(234,179,8,0.3)]" />
-              <div className="w-3 h-3 rounded-full bg-emerald-500/80 shadow-[0_0_6px_rgba(34,197,94,0.3)]" />
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-              <FileCode className="w-3 h-3 text-white/40" />
-              <span className="text-[11px] text-white/60 font-mono font-medium">main.{langInfo.ext}</span>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              {isHost && <Crown className="w-3 h-3 text-amber-400/60" />}
-              <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-[9px] text-white/40 font-mono tracking-wide uppercase">
-                {langInfo.name}
-              </span>
-            </div>
+        {/* Center: Tabbed content */}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Tab bar */}
+          <div className="flex items-center gap-0.5 mb-3 shrink-0">
+            <button
+              onClick={() => setActiveTab('code')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all ${
+                activeTab === 'code'
+                  ? 'bg-white/[0.06] text-white/90 border border-white/[0.08] border-b-transparent'
+                  : 'text-white/40 hover:text-white/70 hover:bg-white/[0.03]'
+              }`}
+            >
+              <FileCode className="w-3.5 h-3.5" />
+              Code
+            </button>
+            <button
+              onClick={() => setActiveTab('whiteboard')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all ${
+                activeTab === 'whiteboard'
+                  ? 'bg-white/[0.06] text-white/90 border border-white/[0.08] border-b-transparent'
+                  : 'text-white/40 hover:text-white/70 hover:bg-white/[0.03]'
+              }`}
+            >
+              <Pen className="w-3.5 h-3.5" />
+              Whiteboard
+            </button>
           </div>
 
-          <div className="flex-1 min-h-0 relative premium-glass-editor-bg">
-            <div className="absolute inset-0 pointer-events-none z-0">
-              <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_20%_20%,rgba(255,255,255,0.03)_0%,transparent_60%)]" />
+          {activeTab === 'code' ? (
+            <div className="flex-1 flex gap-3 sm:gap-4 min-h-0">
+              {/* Editor */}
+              <div className="flex-1 flex flex-col min-h-0 premium-glass-card rounded-[28px] overflow-hidden border-shine">
+                <div className="flex items-center gap-3 px-5 py-3 border-b border-white/[0.06] bg-white/[0.02] shrink-0">
+                  <div className="flex gap-1.5">
+                    <div className="w-3 h-3 rounded-full bg-red-500/80 shadow-[0_0_6px_rgba(239,68,68,0.3)]" />
+                    <div className="w-3 h-3 rounded-full bg-yellow-500/80 shadow-[0_0_6px_rgba(234,179,8,0.3)]" />
+                    <div className="w-3 h-3 rounded-full bg-emerald-500/80 shadow-[0_0_6px_rgba(34,197,94,0.3)]" />
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                    <FileCode className="w-3 h-3 text-white/40" />
+                    <span className="text-[11px] text-white/60 font-mono font-medium">main.{langInfo.ext}</span>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    {isHost && <Crown className="w-3 h-3 text-amber-400/60" />}
+                    <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-[9px] text-white/40 font-mono tracking-wide uppercase">
+                      {langInfo.name}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex-1 min-h-0 relative premium-glass-editor-bg">
+                  <div className="absolute inset-0 pointer-events-none z-0">
+                    <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_20%_20%,rgba(255,255,255,0.03)_0%,transparent_60%)]" />
+                  </div>
+                  <div className="absolute inset-0 z-1">
+                    <Editor
+                      language={language}
+                      code={code}
+                      onChange={handleCodeChange}
+                    />
+                  </div>
+                  <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/[0.08] to-transparent pointer-events-none z-10" />
+                </div>
+
+                <div className="flex items-center justify-between px-5 py-1.5 border-t border-white/[0.04] bg-white/[0.015] shrink-0">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-white/30 font-mono">{userName}</span>
+                    <span className="text-white/[0.06]">|</span>
+                    <span className="text-[10px] text-white/30 font-mono">{langInfo.name}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right panel for code view */}
+              <div className="w-full lg:w-[360px] xl:w-[400px] flex flex-col gap-3 shrink-0 overflow-hidden">
+                {showInput && (
+                  <div className="flex-shrink-0 premium-glass-card rounded-[28px] overflow-hidden border-shine" style={{ minHeight: '140px', maxHeight: '260px' }}>
+                    <InputPanel value={input} onChange={handleInputChange} />
+                  </div>
+                )}
+                <div className={`${showInput ? 'flex-1' : 'flex-1'} premium-glass-card rounded-[28px] overflow-hidden border-shine`}>
+                  <OutputPanel output={output} error={error} loading={loading} stats={stats} onCopy={handleCopyOutput} />
+                </div>
+              </div>
             </div>
-            <div className="absolute inset-0 z-1">
-              <Editor
-                language={language}
-                code={code}
-                onChange={handleCodeChange}
+          ) : (
+            /* Whiteboard tab */
+            <div className="flex-1 min-h-0">
+              <Whiteboard
+                socket={socketRef.current}
+                roomId={roomId}
               />
             </div>
-            <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/[0.08] to-transparent pointer-events-none z-10" />
-          </div>
-
-          <div className="flex items-center justify-between px-5 py-1.5 border-t border-white/[0.04] bg-white/[0.015] shrink-0">
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] text-white/30 font-mono">{userName}</span>
-              <span className="text-white/[0.06]">|</span>
-              <span className="text-[10px] text-white/30 font-mono">{langInfo.name}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right panel */}
-        <div className="w-full lg:w-[360px] xl:w-[400px] flex flex-col gap-3 shrink-0 overflow-hidden">
-          {showInput && (
-            <div className="flex-shrink-0 premium-glass-card rounded-[28px] overflow-hidden border-shine" style={{ minHeight: '140px', maxHeight: '260px' }}>
-              <InputPanel value={input} onChange={handleInputChange} />
-            </div>
           )}
-          <div className={`${showInput ? 'flex-1' : 'flex-1'} premium-glass-card rounded-[28px] overflow-hidden border-shine`}>
-            <OutputPanel output={output} error={error} loading={loading} stats={stats} onCopy={handleCopyOutput} />
-          </div>
         </div>
       </div>
 
@@ -489,6 +536,15 @@ function RoomContent() {
           <span className="text-[10px] text-white/25 font-mono">Room: {roomId.slice(0, 8)}</span>
         </div>
         <div className="flex items-center gap-3">
+          {activeTab === 'code' && (
+            <button
+              onClick={() => setShowInput(!showInput)}
+              className="flex items-center gap-1.5 text-[10px] text-white/30 font-mono hover:text-white/50 transition-all"
+            >
+              {showInput ? <PanelRightClose className="w-2.5 h-2.5" /> : <PanelRightOpen className="w-2.5 h-2.5" />}
+              {showInput ? 'Hide Input' : 'Show Input'}
+            </button>
+          )}
           {isHost && (
             <button onClick={handleCopyInvite} className="flex items-center gap-1.5 text-[10px] text-white/30 font-mono hover:text-white/50 transition-all">
               <Copy className="w-2.5 h-2.5" />

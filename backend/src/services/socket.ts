@@ -1,10 +1,24 @@
 import { Server as HTTPServer } from 'http';
 import { Server, Socket } from 'socket.io';
-import { executeCode, getSupportedLanguages } from './executor';
+import { executeCode } from './executor';
 
 interface Participant {
   socketId: string;
   name: string;
+}
+
+interface DrawAction {
+  id: string;
+  type: 'path' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text';
+  color: string;
+  strokeSize: number;
+  points?: { x: number; y: number }[];
+  startX?: number;
+  startY?: number;
+  endX?: number;
+  endY?: number;
+  text?: string;
+  isEraser?: boolean;
 }
 
 interface RoomState {
@@ -23,19 +37,10 @@ interface RoomState {
   };
   allowEdit: boolean;
   participants: Participant[];
+  whiteboardActions: DrawAction[];
 }
 
 const rooms = new Map<string, RoomState>();
-
-const LANG_DISPLAY: Record<string, { name: string; ext: string }> = {
-  python: { name: 'Python', ext: 'py' },
-  c: { name: 'C', ext: 'c' },
-  cpp: { name: 'C++', ext: 'cpp' },
-  javascript: { name: 'JavaScript', ext: 'js' },
-  php: { name: 'PHP', ext: 'php' },
-  java: { name: 'Java', ext: 'java' },
-  assembly: { name: 'Assembly', ext: 'asm' },
-};
 
 export function createSocketServer(httpServer: HTTPServer) {
   const io = new Server(httpServer, {
@@ -68,6 +73,7 @@ export function createSocketServer(httpServer: HTTPServer) {
           stats: null,
           allowEdit: true,
           participants: [],
+          whiteboardActions: [],
         });
         console.log(`[socket] Room created: ${roomId} by ${name} (${socket.id})`);
       }
@@ -129,7 +135,6 @@ export function createSocketServer(httpServer: HTTPServer) {
       const room = rooms.get(currentRoom)!;
       const isHost = room.hostSocketId === socket.id;
       if (!isHost) return;
-
       if (!room.code.trim()) return;
 
       console.log(`[socket] Running code in room ${currentRoom}: ${room.language}`);
@@ -195,6 +200,27 @@ export function createSocketServer(httpServer: HTTPServer) {
     socket.on('media-state', ({ enabled }: { enabled: { audio: boolean; video: boolean } }) => {
       if (!currentRoom) return;
       socket.to(currentRoom).emit('media-state', { socketId: socket.id, enabled });
+    });
+
+    // Whiteboard events
+    socket.on('whiteboard-draw', (action: DrawAction) => {
+      if (!currentRoom || !rooms.has(currentRoom)) return;
+      const room = rooms.get(currentRoom)!;
+      room.whiteboardActions.push(action);
+      socket.to(currentRoom).emit('whiteboard-draw', action);
+    });
+
+    socket.on('whiteboard-request-state', () => {
+      if (!currentRoom || !rooms.has(currentRoom)) return;
+      const room = rooms.get(currentRoom)!;
+      socket.emit('whiteboard-state', room.whiteboardActions);
+    });
+
+    socket.on('whiteboard-clear', () => {
+      if (!currentRoom || !rooms.has(currentRoom)) return;
+      const room = rooms.get(currentRoom)!;
+      room.whiteboardActions = [];
+      io.to(currentRoom).emit('whiteboard-clear');
     });
 
     socket.on('disconnect', () => {
