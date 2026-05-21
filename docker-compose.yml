@@ -1,0 +1,46 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NEXT_TELEMETRY_DISABLED=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    network_mode: "host"
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - CORS_ORIGIN=http://localhost:3000
+      - EXECUTION_TIMEOUT=${EXECUTION_TIMEOUT:-10}
+      - EXECUTION_MEMORY_LIMIT=${EXECUTION_MEMORY_LIMIT:-256}
+      - EXECUTION_CPU_LIMIT=${EXECUTION_CPU_LIMIT:-1}
+      - EXECUTION_OUTPUT_LIMIT=${EXECUTION_OUTPUT_LIMIT:-65536}
+      - EXECUTION_MAX_FILE_SIZE=${EXECUTION_MAX_FILE_SIZE:-65536}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /tmp/codeforge-workspace:/workspace:Z
+    depends_on:
+      executor-builder:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  executor-builder:
+    build:
+      context: ./execution
+      dockerfile: Dockerfile
+    image: codeforge-executor:latest
+    container_name: codeforge-executor-builder
+    command: echo "Execution image built successfully"

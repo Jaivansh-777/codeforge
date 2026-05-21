@@ -1,0 +1,381 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  --foreground: #f0f0f0;
+  --background: #050505;
+  --accent: #ffffff;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-light: rgba(255, 255, 255, 0.12);
+  --glass-bg: rgba(12, 12, 14, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.06);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection { background: rgba(255,255,255,0.12); color: #fff; }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+/* === Premium Glassmorphism === */
+
+.mirror-glass {
+  background: rgba(8, 8, 12, 0.55);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.mirror-glass-light {
+  background: rgba(10, 10, 14, 0.5);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.mirror-glass-header {
+  background: rgba(12, 12, 18, 0.6);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.glass-nav {
+  background: rgba(10, 10, 12, 0.75);
+  backdrop-filter: blur(28px) saturate(1.3);
+  -webkit-backdrop-filter: blur(28px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* === Mirror shine overlay === */
+.mirror-shine::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* === Text === */
+.text-gradient-mono {
+  background: linear-gradient(135deg, #ffffff 0%, #b0b0b0 50%, #808080 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-icy {
+  background: linear-gradient(135deg, #e0e7ff 0%, #a5b4fc 50%, #67e8f9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* === Background textures === */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+.bg-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.015'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 128px 128px;
+}
+
+/* === Terminal === */
+.terminal-cursor::after {
+  content: '▎';
+  animation: blink 1s step-end infinite;
+  color: #888;
+}
+
+.terminal-output::-webkit-scrollbar { width: 4px; }
+.terminal-output::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+/* === Monaco overrides === */
+.monaco-editor .margin { background: transparent !important; }
+.monaco-editor .minimap-slider { background: rgba(255,255,255,0.08) !important; }
+.monaco-editor .monaco-editor-background { background: transparent !important; }
+.monaco-editor .decorationsOverviewRuler { display: none !important; }
+
+/* === Animations === */
+@keyframes blink { 50% { opacity: 0; } }
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.3s ease-out; }
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-down { animation: slideDown 0.3s ease-out; }
+
+@keyframes floatUp {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-20px) scale(1.02); }
+}
+.animate-float-up { animation: floatUp 8s ease-in-out infinite; }
+.animate-float-up-delayed { animation: floatUp 10s ease-in-out infinite; animation-delay: -3s; }
+.animate-float-up-slow { animation: floatUp 12s ease-in-out infinite; animation-delay: -6s; }
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes bubbleFloat {
+  0%, 100% { transform: translateY(0) translateX(0) scale(1); opacity: 0.4; }
+  25% { transform: translateY(-30px) translateX(15px) scale(1.05); opacity: 0.6; }
+  50% { transform: translateY(-10px) translateX(-10px) scale(0.95); opacity: 0.3; }
+  75% { transform: translateY(-40px) translateX(10px) scale(1.02); opacity: 0.5; }
+}
+.animate-bubble { animation: bubbleFloat 18s ease-in-out infinite; }
+.animate-bubble-2 { animation: bubbleFloat 22s ease-in-out infinite; animation-delay: -5s; }
+.animate-bubble-3 { animation: bubbleFloat 26s ease-in-out infinite; animation-delay: -10s; }
+
+@keyframes shine {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes orbitSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.animate-orbit { animation: orbitSpin 20s linear infinite; }
+@keyframes orbitSpinReverse { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+.animate-orbit-reverse { animation: orbitSpinReverse 30s linear infinite; }
+
+@keyframes twinkle { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+
+@keyframes robotFloat {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  33% { transform: translateY(-10px) rotate(0.4deg); }
+  66% { transform: translateY(-5px) rotate(-0.2deg); }
+}
+.animate-float-slow { animation: robotFloat 6s ease-in-out infinite; }
+
+/* === Premium Compiler Glass === */
+.premium-glass-card {
+  background: rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(28px) saturate(1.5);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 30px 90px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
+  position: relative;
+}
+/* Mirror shine top edge */
+.premium-glass-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.14) 30%, rgba(255,255,255,0.18) 50%, rgba(255,255,255,0.14) 70%, transparent 100%);
+  pointer-events: none;
+  z-index: 2;
+}
+/* Subtle reflection gradient top-left corner */
+.premium-glass-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200px;
+  height: 120px;
+  background: radial-gradient(ellipse at 0% 0%, rgba(255,255,255,0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+.premium-glass-card-light {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+/* Editor body frosted glass */
+.premium-glass-editor-bg {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px) saturate(1.2);
+  -webkit-backdrop-filter: blur(8px) saturate(1.2);
+}
+
+/* Terminal inner glass area */
+.premium-glass-terminal {
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Language dropdown glass */
+.premium-glass-dropdown {
+  background: rgba(10, 10, 14, 0.9);
+  backdrop-filter: blur(32px) saturate(1.4);
+  -webkit-backdrop-filter: blur(32px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* === Animated border shine for cards === */
+.border-shine {
+  position: relative;
+  overflow: hidden;
+}
+.border-shine::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.03) 45%,
+    rgba(255, 255, 255, 0.06) 50%,
+    rgba(255, 255, 255, 0.03) 55%,
+    transparent 60%
+  );
+  animation: borderShine 6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes borderShine {
+  0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+  100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+}
+
+/* === Floating glass bubbles (black/white theme) === */
+@keyframes glassBubbleA {
+  0%, 100% { transform: translate(0px, 0px) scale(1); }
+  20% { transform: translate(20px, -30px) scale(1.03); }
+  40% { transform: translate(-10px, -50px) scale(0.97); }
+  60% { transform: translate(-30px, -20px) scale(1.02); }
+  80% { transform: translate(15px, -40px) scale(0.98); }
+}
+@keyframes glassBubbleB {
+  0%, 100% { transform: translate(0px, 0px) scale(1); }
+  25% { transform: translate(-25px, -35px) scale(1.04); }
+  50% { transform: translate(15px, -55px) scale(0.96); }
+  75% { transform: translate(30px, -25px) scale(1.01); }
+}
+@keyframes glassBubbleC {
+  0%, 100% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -40px) scale(1.02); }
+  66% { transform: translate(-20px, -60px) scale(0.98); }
+}
+
+.glass-bubble {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 8px 32px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+.glass-bubble-1 {
+  animation: glassBubbleA 24s ease-in-out infinite;
+}
+.glass-bubble-2 {
+  animation: glassBubbleB 28s ease-in-out infinite;
+}
+.glass-bubble-3 {
+  animation: glassBubbleC 32s ease-in-out infinite;
+}
+
+/* === Loading shimmer for run button === */
+.shimmer-loading {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.03) 0%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* === Editor actions glass button === */
+.glass-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.4);
+  transition: all 0.2s ease;
+}
+.glass-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+}
