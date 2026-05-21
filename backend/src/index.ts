@@ -1,11 +1,14 @@
 import express from 'express';
 import cors from 'cors';
+import http from 'http';
 import { config } from './config';
 import executeRouter from './routes/execute';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimit } from './middleware/rateLimit';
+import { createSocketServer } from './services/socket';
 
 const app = express();
+const server = http.createServer(app);
 
 app.use(cors({
   origin: '*',
@@ -31,8 +34,10 @@ app.use('/api', executeRouter);
 
 app.use(errorHandler);
 
+createSocketServer(server);
+
 async function start() {
-  app.listen(config.port, () => {
+  server.listen(config.port, () => {
     console.log(`CodeForge backend running on port ${config.port}`);
   });
 }

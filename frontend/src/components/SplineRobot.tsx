@@ -74,14 +74,14 @@ export default function SplineRobot() {
     <div className="relative w-full h-full flex items-center justify-center">
       {/* Orbital rings */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full border border-white/[0.04] animate-orbit" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] rounded-full border border-dashed border-white/[0.025] animate-orbit-reverse" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[440px] h-[440px] rounded-full border border-white/[0.02] animate-orbit" style={{ animationDuration: '25s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(90vw,500px)] h-[min(90vw,500px)] rounded-full border border-white/[0.04] animate-orbit" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(68vw,380px)] h-[min(68vw,380px)] rounded-full border border-dashed border-white/[0.025] animate-orbit-reverse" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(80vw,440px)] h-[min(80vw,440px)] rounded-full border border-white/[0.02] animate-orbit" style={{ animationDuration: '25s' }} />
       </div>
 
       {/* Orbital dots */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] animate-orbit">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(90vw,500px)] h-[min(90vw,500px)] animate-orbit">
           {Array.from({ length: 16 }).map((_, i) => {
             const angle = (i / 16) * 360;
             const rad = (angle * Math.PI) / 180;
@@ -100,7 +100,7 @@ export default function SplineRobot() {
       </div>
 
       {/* Glowing sphere behind robot */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] h-[280px] rounded-full bg-gradient-to-br from-cyan-400/5 via-indigo-400/5 to-purple-400/5 blur-[80px] animate-pulse pointer-events-none z-0" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(50vw,280px)] h-[min(50vw,280px)] rounded-full bg-gradient-to-br from-cyan-400/5 via-indigo-400/5 to-purple-400/5 blur-[80px] animate-pulse pointer-events-none z-0" />
 
       {/* Loading skeleton */}
       {!loaded && !error && (
@@ -142,8 +142,8 @@ export default function SplineRobot() {
         />
         <div
           ref={containerRef}
-          className={`w-full h-full transition-opacity duration-1000 scale-110 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-          style={{ minHeight: '520px', maxHeight: '780px', position: 'relative', zIndex: 2 }}
+          className={`w-full h-full transition-opacity duration-1000 scale-[1.4] sm:scale-110 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          style={{ minHeight: '70vh', maxHeight: '780px', position: 'relative', zIndex: 2 }}
         />
       </div>
     </div>

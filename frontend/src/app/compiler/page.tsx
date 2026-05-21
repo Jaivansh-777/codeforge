@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
   Play, RotateCcw, Copy, Download, PanelRightClose, PanelRightOpen,
-  Loader2, Terminal, Sparkles, FileCode, AlertTriangle, X
+  Loader2, Terminal, Sparkles, FileCode, AlertTriangle, X, Users,
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import Editor from '@/components/Editor';
@@ -214,6 +214,16 @@ export default function CompilerPage() {
                 <RotateCcw className="w-3 h-3" />
               </button>
             </div>
+
+            {/* Create Live Room button */}
+            <a
+              href={`/room/${crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10)}`}
+              className="hidden sm:inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl bg-white/[0.06] text-white/70 border border-white/[0.08] hover:bg-white/[0.1] hover:text-white/90 transition-all duration-200"
+              title="Create a live collaboration room"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Live Room</span>
+            </a>
 
             {/* Right: Run button */}
             <button

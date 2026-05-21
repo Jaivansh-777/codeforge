@@ -149,9 +149,9 @@ export default function LandingPage() {
                 initial={{ opacity: 0, scale: 0.92 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.8, delay: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
-                className="relative flex items-center justify-center lg:justify-end -mr-8 lg:-mr-20"
+                className="relative flex items-center justify-center lg:justify-end lg:-mr-20"
               >
-                <div className="relative w-full max-w-[520px] lg:max-w-[650px] xl:max-w-[750px] aspect-[4/5] lg:aspect-square">
+                <div className="relative w-full max-w-[90vw] sm:max-w-[520px] lg:max-w-[650px] xl:max-w-[750px] aspect-square">
                   {/* Soft white/grey radial glow */}
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="w-[500px] h-[500px] rounded-full bg-white/[0.04] blur-[140px]" />
