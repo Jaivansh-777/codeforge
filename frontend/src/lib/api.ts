@@ -2,7 +2,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
 async function apiFetch(path: string, options?: RequestInit) {
   const url = `${API_BASE}${path}`;
-  console.log(`[API] Fetching: ${url}`);
+  console.log(`[apiFetch] ${options?.method || 'GET'} ${url}`);
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -12,20 +12,20 @@ async function apiFetch(path: string, options?: RequestInit) {
       headers: { 'Content-Type': 'application/json', ...options?.headers },
     });
     clearTimeout(timeoutId);
-    console.log(`[API] Response status: ${res.status}`);
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(err.error || `HTTP ${res.status}`);
+      const errBody = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      console.error(`[apiFetch] Error ${res.status}:`, errBody);
+      throw new Error(errBody.error || `HTTP ${res.status}`);
     }
-    return res.json();
+    const data = await res.json();
+    console.log(`[apiFetch] Response OK:`, data);
+    return data;
   } catch (e: any) {
-    console.error(`[API] Error:`, e.message);
     if (e.name === 'AbortError') {
-      throw new Error('Request timed out. Backend may be unreachable.');
+      console.error('[apiFetch] Request timed out');
+      throw new Error('Request timed out.');
     }
-    if (e.message?.includes('fetch') || e.message?.includes('NetworkError') || e.message?.includes('Failed to fetch')) {
-      throw new Error('Cannot connect to backend. Is the server running?');
-    }
+    console.error(`[apiFetch] Network error:`, e.message);
     throw e;
   }
 }

@@ -5,12 +5,22 @@ import { config } from './config';
 import executeRouter from './routes/execute';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimit } from './middleware/rateLimit';
-import { initDb } from './db';
 
 const app = express();
 
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || config.cors.origins.includes('*') || config.cors.origins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
+  credentials: true,
+};
+
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: config.cors.origin, credentials: true }));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 app.use(rateLimit);
 
@@ -23,9 +33,9 @@ app.use('/api', executeRouter);
 app.use(errorHandler);
 
 async function start() {
-  await initDb();
   app.listen(config.port, () => {
     console.log(`CodeForge backend running on port ${config.port}`);
+    console.log(`CORS origins: ${config.cors.origins.join(', ')}`);
   });
 }
 

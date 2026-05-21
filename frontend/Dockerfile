@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 COPY package*.json ./
@@ -7,7 +7,18 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:20-bookworm-slim AS runner
+
+RUN apt-get update && apt-get install -y \
+    python3 \
+    gcc \
+    g++ \
+    php-cli \
+    default-jdk \
+    nasm \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/bin/python
 
 WORKDIR /app
 

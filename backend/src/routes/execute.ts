@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { executeCode, getSupportedLanguages } from '../services/docker';
-import { logExecution, saveSnippet } from '../db';
+import { executeCode, getSupportedLanguages } from '../services/executor';
 import { config } from '../config';
 
 const router = Router();
@@ -38,19 +37,6 @@ router.post('/execute', async (req: Request, res: Response) => {
     console.log(`  Exit code: ${result.exitCode}`);
     console.log(`  Output length: ${result.output.length}`);
     console.log(`  Error length: ${result.error.length}`);
-
-    await logExecution({
-      language,
-      code,
-      input: input || '',
-      output: result.output,
-      error: result.error,
-      execution_time_ms: result.executionTimeMs,
-      memory_used_kb: result.memoryUsedKb,
-      cpu_time_ms: result.cpuTimeMs,
-      exit_code: result.exitCode ?? -1,
-      status: result.timedOut ? 'timeout' : (result.exitCode === 0 ? 'success' : 'error'),
-    }).catch(e => console.error('[POST /api/execute] Logging failed:', e.message));
 
     console.log('========================================');
 
