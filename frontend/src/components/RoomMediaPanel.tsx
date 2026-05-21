@@ -398,7 +398,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       <>
         <button
           onClick={() => setMinimized(false)}
-          className="fixed bottom-20 right-4 z-[9999] w-12 h-12 rounded-full premium-glass-card border-shine flex items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.6)] hover:scale-105 transition-transform"
+          className="fixed top-[76px] right-4 z-[9999] w-12 h-12 rounded-full premium-glass-card border-shine flex items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.6)] hover:scale-105 transition-transform"
         >
           <div className="relative">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
@@ -410,15 +410,15 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
               micMuted ? 'bg-red-400' : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
             }`} />
           </div>
-          {activePeers.length > 0 && (
+          {participants.length > 1 && (
             <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-white/15 text-[9px] font-bold text-white/80 flex items-center justify-center px-1 border border-[#050505]">
-              {activePeers.length + 1}
+              {participants.length}
             </div>
           )}
         </button>
 
         {/* Control dock */}
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)] pointer-events-auto">
           <button onClick={toggleMic} className={`p-2.5 rounded-xl transition-all ${micMuted ? 'bg-red-500/15 text-red-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`} title={micMuted ? 'Unmute mic' : 'Mute mic'}>
             {micMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
@@ -439,103 +439,80 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
   return (
     <>
-      {/* Drag handle + Minimize */}
+      {/* Floating preview panel — pointer-events-none so clicks pass through to editor/output */}
       <div
         ref={panelRef}
-        className="fixed z-[9999] select-none"
+        className="fixed z-[9999] pointer-events-none select-none"
         style={{
-          right: position.x === 0 && position.y === 0 ? '12px' : undefined,
-          bottom: position.x === 0 && position.y === 0 ? '80px' : undefined,
-          left: position.x !== 0 || position.y !== 0 ? `calc(100vw - 192px + ${position.x}px)` : undefined,
-          top: position.x !== 0 || position.y !== 0 ? `calc(100vh - 180px + ${position.y}px)` : undefined,
+          right: '16px',
+          top: position.x === 0 && position.y === 0 ? '76px' : `calc(76px + ${position.y}px)`,
+          transform: position.x !== 0 || position.y !== 0 ? `translateX(${position.x}px)` : undefined,
         }}
       >
-        {/* Main preview */}
-        <div className="premium-glass-card rounded-xl overflow-hidden border-shine shadow-[0_8px_40px_rgba(0,0,0,0.6)]"
-          style={{ width: '180px', maxWidth: '180px' }}>
-          {/* Header drag handle */}
+        <div className="sm:w-[180px] w-[120px] premium-glass-card rounded-xl overflow-hidden border-shine shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+          {/* Header drag handle — pointer-events-auto */}
           <div
             onMouseDown={handleMouseDown}
-            className="flex items-center justify-between px-2 py-1.5 bg-white/[0.03] border-b border-white/[0.06] cursor-grab active:cursor-grabbing"
+            className="flex items-center justify-between px-2 py-1 bg-white/[0.03] border-b border-white/[0.06] cursor-grab active:cursor-grabbing pointer-events-auto"
           >
             <div className="flex items-center gap-1.5">
               <GripHorizontal className="w-2.5 h-2.5 text-white/30" />
-              <span className="text-[9px] text-white/40 font-mono font-medium">{userName}</span>
+              <span className="text-[9px] text-white/40 font-mono font-medium truncate max-w-[60px]">{userName}</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-white/[0.04] text-[8px] text-white/40 font-mono">
-                <Users className="w-2 h-2" />
-                <span>{activePeers.length + 1}</span>
-              </div>
-              <button onClick={() => setMinimized(true)} className="p-0.5 rounded hover:bg-white/[0.06] text-white/40 hover:text-white/70 transition-all">
+              {participants.length > 1 && (
+                <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-white/[0.04] text-[8px] text-white/40 font-mono">
+                  <Users className="w-2 h-2" />
+                  <span>{participants.length}</span>
+                </div>
+              )}
+              <button onClick={() => setMinimized(true)} className="p-0.5 rounded hover:bg-white/[0.06] text-white/40 hover:text-white/70 transition-all pointer-events-auto">
                 <ChevronDown className="w-3 h-3" />
               </button>
             </div>
           </div>
 
-          {/* Video / Avatar area */}
-          <div className="relative" style={{ aspectRatio: '4/3' }}>
+          {/* Video / Avatar area — fixed height 120px sm, 90px mobile */}
+          <div className="relative sm:h-[92px] h-[62px] bg-[#0a0a0e]">
             {!cameraOff ? (
               <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center bg-[#0a0a0e]">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold ${
+              <div className="w-full h-full flex items-center justify-center">
+                <div className={`sm:w-10 sm:h-10 w-7 h-7 rounded-full flex items-center justify-center sm:text-base text-xs font-bold ${
                   !micMuted
                     ? 'bg-emerald-500/20 text-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.2)]'
                     : 'bg-white/[0.06] text-white/50'
                 }`}>
                   {initial}
                 </div>
-                {/* Speaking glow ring */}
                 {!micMuted && (
-                  <div className="absolute inset-0 rounded-b-xl pointer-events-none">
-                    <div className="absolute inset-2 rounded-full bg-emerald-400/5 blur-xl animate-pulse" />
+                  <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute inset-1 sm:inset-2 rounded-full bg-emerald-400/5 blur-xl animate-pulse" />
                   </div>
                 )}
               </div>
             )}
 
-            {/* Bottom overlay */}
-            <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent">
+            {/* Bottom overlay — mic/camera status */}
+            <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/70 to-transparent">
               <div className="flex items-center justify-between">
-                <span className="text-[9px] text-white/70 font-medium drop-shadow-md">You</span>
-                <div className="flex items-center gap-1">
-                  <div className={`p-0.5 rounded ${micMuted ? 'bg-red-400/30' : 'bg-emerald-400/30'}`}>
-                    {micMuted ? <MicOff className="w-2.5 h-2.5 text-red-300" /> : <Mic className="w-2.5 h-2.5 text-emerald-300" />}
+                <span className="text-[8px] text-white/60 font-medium drop-shadow-md">You</span>
+                <div className="flex items-center gap-0.5">
+                  <div className={`p-[1px] rounded ${micMuted ? 'bg-red-400/40' : 'bg-emerald-400/40'}`}>
+                    {micMuted ? <MicOff className="sm:w-2.5 sm:h-2.5 w-2 h-2 text-red-300" /> : <Mic className="sm:w-2.5 sm:h-2.5 w-2 h-2 text-emerald-300" />}
                   </div>
-                  <div className={`p-0.5 rounded ${cameraOff ? 'bg-red-400/30' : 'bg-emerald-400/30'}`}>
-                    {cameraOff ? <VideoOff className="w-2.5 h-2.5 text-red-300" /> : <Video className="w-2.5 h-2.5 text-emerald-300" />}
+                  <div className={`p-[1px] rounded ${cameraOff ? 'bg-red-400/40' : 'bg-emerald-400/40'}`}>
+                    {cameraOff ? <VideoOff className="sm:w-2.5 sm:h-2.5 w-2 h-2 text-red-300" /> : <Video className="sm:w-2.5 sm:h-2.5 w-2 h-2 text-emerald-300" />}
                   </div>
                 </div>
               </div>
             </div>
           </div>
-
-          {/* Remote participants strip */}
-          {activePeers.length > 0 && (
-            <div className="flex items-center gap-1 px-2 py-1.5 border-t border-white/[0.06] bg-white/[0.02] overflow-x-auto scrollbar-none">
-              {activePeers.slice(0, 4).map(pid => {
-                const p = participants.find(pp => pp.socketId === pid);
-                const short = p?.name?.charAt(0).toUpperCase() || '?';
-                return (
-                  <div key={pid} className="flex items-center gap-1.5 shrink-0">
-                    <div className="w-5 h-5 rounded-full bg-white/[0.06] flex items-center justify-center text-[8px] font-bold text-white/50 border border-white/[0.06]">
-                      {short}
-                    </div>
-                    <span className="text-[8px] text-white/40 font-mono truncate max-w-[40px]">{p?.name || '...'}</span>
-                  </div>
-                );
-              })}
-              {activePeers.length > 4 && (
-                <span className="text-[8px] text-white/30 font-mono shrink-0">+{activePeers.length - 4}</span>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Floating control dock */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+      {/* Control dock — pointer-events-auto */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)] pointer-events-auto">
         <button onClick={toggleMic} className={`p-2.5 rounded-xl transition-all ${micMuted ? 'bg-red-500/15 text-red-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`} title={micMuted ? 'Unmute mic' : 'Mute mic'}>
           {micMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
         </button>
