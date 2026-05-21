@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, MicOff, Video, VideoOff, Monitor, PhoneOff, Phone, Loader2 } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, PhoneOff, Phone, Loader2, ChevronDown, Users, GripHorizontal } from 'lucide-react';
 import type { Socket } from 'socket.io-client';
 
 interface Participant {
@@ -35,12 +35,16 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   const [screenSharing, setScreenSharing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [minimized, setMinimized] = useState(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, PeerData>>(new Map());
   const remoteVideosRef = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const otherParticipants = participants.filter(p => p.socketId !== socketId);
 
@@ -340,6 +344,35 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     return () => { socket.off('user-left', handleUserLeft); };
   }, [socket]);
 
+  // Auto-minimize on mobile
+  useEffect(() => {
+    if (!mediaActive) return;
+    const check = () => setMinimized(window.innerWidth < 640);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, [mediaActive]);
+
+  // Drag handlers
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current.isDragging = true;
+    dragRef.current.startX = e.clientX;
+    dragRef.current.startY = e.clientY;
+    dragRef.current.startPosX = position.x;
+    dragRef.current.startPosY = position.y;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current.isDragging) return;
+      const dx = ev.clientX - dragRef.current.startX;
+      const dy = ev.clientY - dragRef.current.startY;
+      setPosition({ x: dragRef.current.startPosX + dx, y: dragRef.current.startPosY + dy });
+    };
+    const onUp = () => { dragRef.current.isDragging = false; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp, { once: true });
+  }, [position]);
+
   if (!mediaActive) {
     return (
       <div className="flex items-center gap-2">
@@ -357,66 +390,163 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   }
 
   const activePeers = Array.from(peersRef.current.keys());
+  const initial = userName.charAt(0).toUpperCase();
+
+  // Minimized bubble
+  if (minimized) {
+    return (
+      <>
+        <button
+          onClick={() => setMinimized(false)}
+          className="fixed bottom-20 right-4 z-[9999] w-12 h-12 rounded-full premium-glass-card border-shine flex items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.6)] hover:scale-105 transition-transform"
+        >
+          <div className="relative">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+              cameraOff ? 'bg-white/[0.08] text-white/70' : 'bg-emerald-500/20 text-emerald-400'
+            }`}>
+              {initial}
+            </div>
+            <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-[#050505] ${
+              micMuted ? 'bg-red-400' : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
+            }`} />
+          </div>
+          {activePeers.length > 0 && (
+            <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-white/15 text-[9px] font-bold text-white/80 flex items-center justify-center px-1 border border-[#050505]">
+              {activePeers.length + 1}
+            </div>
+          )}
+        </button>
+
+        {/* Control dock */}
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+          <button onClick={toggleMic} className={`p-2.5 rounded-xl transition-all ${micMuted ? 'bg-red-500/15 text-red-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`} title={micMuted ? 'Unmute mic' : 'Mute mic'}>
+            {micMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+          </button>
+          <button onClick={toggleCamera} className={`p-2.5 rounded-xl transition-all ${cameraOff ? 'bg-red-500/15 text-red-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`} title={cameraOff ? 'Turn on camera' : 'Turn off camera'}>
+            {cameraOff ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}
+          </button>
+          <button onClick={toggleScreenShare} className={`p-2.5 rounded-xl transition-all ${screenSharing ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`} title={screenSharing ? 'Stop sharing' : 'Share screen'}>
+            <Monitor className="w-4 h-4" />
+          </button>
+          <div className="w-px h-6 bg-white/[0.08] mx-1" />
+          <button onClick={leaveMedia} className="p-2.5 rounded-xl bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all" title="Leave audio">
+            <PhoneOff className="w-4 h-4" />
+          </button>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
-      {/* Video tiles */}
-      <div className="fixed bottom-20 right-4 z-[9999] flex flex-col gap-2 max-w-[200px]">
-        {/* Local video */}
-        <div className="relative premium-glass-card rounded-xl overflow-hidden border-shine w-full" style={{ aspectRatio: '4/3', minHeight: '100px' }}>
-          <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-          <div className="absolute bottom-1 left-1.5 flex items-center gap-1">
-            <div className={`w-1.5 h-1.5 rounded-full ${micMuted ? 'bg-red-400' : 'bg-emerald-400'}`} />
-            <span className="text-[8px] text-white/60 font-medium drop-shadow-lg">You</span>
+      {/* Drag handle + Minimize */}
+      <div
+        ref={panelRef}
+        className="fixed z-[9999] select-none"
+        style={{
+          right: position.x === 0 && position.y === 0 ? '12px' : undefined,
+          bottom: position.x === 0 && position.y === 0 ? '80px' : undefined,
+          left: position.x !== 0 || position.y !== 0 ? `calc(100vw - 192px + ${position.x}px)` : undefined,
+          top: position.x !== 0 || position.y !== 0 ? `calc(100vh - 180px + ${position.y}px)` : undefined,
+        }}
+      >
+        {/* Main preview */}
+        <div className="premium-glass-card rounded-xl overflow-hidden border-shine shadow-[0_8px_40px_rgba(0,0,0,0.6)]"
+          style={{ width: '180px', maxWidth: '180px' }}>
+          {/* Header drag handle */}
+          <div
+            onMouseDown={handleMouseDown}
+            className="flex items-center justify-between px-2 py-1.5 bg-white/[0.03] border-b border-white/[0.06] cursor-grab active:cursor-grabbing"
+          >
+            <div className="flex items-center gap-1.5">
+              <GripHorizontal className="w-2.5 h-2.5 text-white/30" />
+              <span className="text-[9px] text-white/40 font-mono font-medium">{userName}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-white/[0.04] text-[8px] text-white/40 font-mono">
+                <Users className="w-2 h-2" />
+                <span>{activePeers.length + 1}</span>
+              </div>
+              <button onClick={() => setMinimized(true)} className="p-0.5 rounded hover:bg-white/[0.06] text-white/40 hover:text-white/70 transition-all">
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </div>
           </div>
-        </div>
-        {activePeers.map(pid => {
-          const p = participants.find(pp => pp.socketId === pid);
-          return (
-            <div key={pid} className="relative premium-glass-card rounded-xl overflow-hidden border-shine w-full" style={{ aspectRatio: '4/3', minHeight: '100px' }}>
-              <video
-                ref={el => { if (el) remoteVideosRef.current.set(pid, el); }}
-                autoPlay
-                playsInline
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute bottom-1 left-1.5">
-                <span className="text-[8px] text-white/60 font-medium drop-shadow-lg">{p?.name || 'Peer'}</span>
+
+          {/* Video / Avatar area */}
+          <div className="relative" style={{ aspectRatio: '4/3' }}>
+            {!cameraOff ? (
+              <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-[#0a0a0e]">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold ${
+                  !micMuted
+                    ? 'bg-emerald-500/20 text-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.2)]'
+                    : 'bg-white/[0.06] text-white/50'
+                }`}>
+                  {initial}
+                </div>
+                {/* Speaking glow ring */}
+                {!micMuted && (
+                  <div className="absolute inset-0 rounded-b-xl pointer-events-none">
+                    <div className="absolute inset-2 rounded-full bg-emerald-400/5 blur-xl animate-pulse" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Bottom overlay */}
+            <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] text-white/70 font-medium drop-shadow-md">You</span>
+                <div className="flex items-center gap-1">
+                  <div className={`p-0.5 rounded ${micMuted ? 'bg-red-400/30' : 'bg-emerald-400/30'}`}>
+                    {micMuted ? <MicOff className="w-2.5 h-2.5 text-red-300" /> : <Mic className="w-2.5 h-2.5 text-emerald-300" />}
+                  </div>
+                  <div className={`p-0.5 rounded ${cameraOff ? 'bg-red-400/30' : 'bg-emerald-400/30'}`}>
+                    {cameraOff ? <VideoOff className="w-2.5 h-2.5 text-red-300" /> : <Video className="w-2.5 h-2.5 text-emerald-300" />}
+                  </div>
+                </div>
               </div>
             </div>
-          );
-        })}
+          </div>
+
+          {/* Remote participants strip */}
+          {activePeers.length > 0 && (
+            <div className="flex items-center gap-1 px-2 py-1.5 border-t border-white/[0.06] bg-white/[0.02] overflow-x-auto scrollbar-none">
+              {activePeers.slice(0, 4).map(pid => {
+                const p = participants.find(pp => pp.socketId === pid);
+                const short = p?.name?.charAt(0).toUpperCase() || '?';
+                return (
+                  <div key={pid} className="flex items-center gap-1.5 shrink-0">
+                    <div className="w-5 h-5 rounded-full bg-white/[0.06] flex items-center justify-center text-[8px] font-bold text-white/50 border border-white/[0.06]">
+                      {short}
+                    </div>
+                    <span className="text-[8px] text-white/40 font-mono truncate max-w-[40px]">{p?.name || '...'}</span>
+                  </div>
+                );
+              })}
+              {activePeers.length > 4 && (
+                <span className="text-[8px] text-white/30 font-mono shrink-0">+{activePeers.length - 4}</span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Floating control dock */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
-        <button
-          onClick={toggleMic}
-          className={`p-2.5 rounded-xl transition-all ${micMuted ? 'bg-red-500/15 text-red-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`}
-          title={micMuted ? 'Unmute mic' : 'Mute mic'}
-        >
+        <button onClick={toggleMic} className={`p-2.5 rounded-xl transition-all ${micMuted ? 'bg-red-500/15 text-red-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`} title={micMuted ? 'Unmute mic' : 'Mute mic'}>
           {micMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
         </button>
-        <button
-          onClick={toggleCamera}
-          className={`p-2.5 rounded-xl transition-all ${cameraOff ? 'bg-red-500/15 text-red-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`}
-          title={cameraOff ? 'Turn on camera' : 'Turn off camera'}
-        >
+        <button onClick={toggleCamera} className={`p-2.5 rounded-xl transition-all ${cameraOff ? 'bg-red-500/15 text-red-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`} title={cameraOff ? 'Turn on camera' : 'Turn off camera'}>
           {cameraOff ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}
         </button>
-        <button
-          onClick={toggleScreenShare}
-          className={`p-2.5 rounded-xl transition-all ${screenSharing ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`}
-          title={screenSharing ? 'Stop sharing' : 'Share screen'}
-        >
+        <button onClick={toggleScreenShare} className={`p-2.5 rounded-xl transition-all ${screenSharing ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`} title={screenSharing ? 'Stop sharing' : 'Share screen'}>
           <Monitor className="w-4 h-4" />
         </button>
         <div className="w-px h-6 bg-white/[0.08] mx-1" />
-        <button
-          onClick={leaveMedia}
-          className="p-2.5 rounded-xl bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all"
-          title="Leave audio"
-        >
+        <button onClick={leaveMedia} className="p-2.5 rounded-xl bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all" title="Leave audio">
           <PhoneOff className="w-4 h-4" />
         </button>
       </div>
