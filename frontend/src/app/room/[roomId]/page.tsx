@@ -7,6 +7,7 @@ import {
   Terminal, FileCode, PanelRightClose, PanelRightOpen,
   Loader2, AlertTriangle, X, MessageSquare,
 } from 'lucide-react';
+import RoomMediaPanel from '@/components/RoomMediaPanel';
 import toast, { Toaster } from 'react-hot-toast';
 import Editor from '@/components/Editor';
 import LanguageSelector from '@/components/LanguageSelector';
@@ -343,6 +344,14 @@ function RoomContent() {
               >
                 <MessageSquare className="w-3.5 h-3.5" />
               </button>
+
+              {/* Media (audio/video) */}
+              <RoomMediaPanel
+                socket={socketRef.current}
+                socketId={socketId}
+                participants={participants}
+                userName={userName}
+              />
 
               {/* Copy invite */}
               <button

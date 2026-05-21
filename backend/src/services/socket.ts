@@ -186,6 +186,17 @@ export function createSocketServer(httpServer: HTTPServer) {
       });
     });
 
+    // WebRTC signaling
+    socket.on('signal', ({ to, signal }: { to: string; signal: any }) => {
+      if (!currentRoom) return;
+      io.to(to).emit('signal', { from: socket.id, signal });
+    });
+
+    socket.on('media-state', ({ enabled }: { enabled: { audio: boolean; video: boolean } }) => {
+      if (!currentRoom) return;
+      socket.to(currentRoom).emit('media-state', { socketId: socket.id, enabled });
+    });
+
     socket.on('disconnect', () => {
       if (currentRoom && rooms.has(currentRoom)) {
         const room = rooms.get(currentRoom)!;
