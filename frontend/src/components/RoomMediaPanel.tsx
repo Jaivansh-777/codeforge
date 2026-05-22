@@ -346,6 +346,10 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
           const ans = await pc.createAnswer();
           await pc.setLocalDescription(ans);
           socket.emit('signal', { to: from, signal: { type: 'answer', sdp: pc.localDescription } });
+          const audioOn = lsRef.current?.getAudioTracks().some(t => t.enabled) ?? false;
+          const videoOn = lsRef.current?.getVideoTracks().some(t => t.enabled) ?? false;
+          const screenOn = scrStreamRef.current !== null;
+          socket.emit('media-state', { enabled: { audio: audioOn, video: videoOn, screen: screenOn } });
         } else if (signal.type === 'answer') {
           if (pc.signalingState === 'have-local-offer')
             await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
@@ -501,7 +505,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       {/* Screen Share Panel - positioned within room content, not overlapping UI */}
       {hasScreenShare && showScreenPanel && (() => {
         const str = remStreamsRef.current.get(screenShareBy!) || null;
-        if (!str) return null;
         return (
           <div className="fixed z-[60] pointer-events-none"
             style={{ top: '80px', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 1100px)' }}>
@@ -523,9 +526,15 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
                   </button>
                 </div>
               </div>
-              <video ref={el => { if (el && str) el.srcObject = str; }}
-                autoPlay playsInline
-                className="w-full h-full object-contain bg-black/60" />
+              {str ? (
+                <video ref={el => { if (el && str) el.srcObject = str; }}
+                  autoPlay playsInline
+                  className="w-full h-full object-contain bg-black/60" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-black/60">
+                  <Loader2 className="w-8 h-8 text-white/30 animate-spin" />
+                </div>
+              )}
               <div className="absolute bottom-0 left-0 right-0 z-20 px-4 py-2 bg-gradient-to-t from-black/60 to-transparent">
                 <span className="text-[10px] text-white/40 font-mono">Live &bull; Shared screen</span>
               </div>
