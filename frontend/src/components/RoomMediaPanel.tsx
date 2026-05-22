@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, MicOff, Phone, PhoneOff, Loader2, ChevronDown, Users, GripHorizontal } from 'lucide-react';
+import {
+  Mic, MicOff, Phone, PhoneOff, Loader2, ChevronDown, Users,
+  Camera, CameraOff, Monitor, MonitorOff, GripHorizontal,
+  X, Maximize2, Minimize2
+} from 'lucide-react';
 import type { Socket } from 'socket.io-client';
 
 interface Participant {
@@ -20,11 +24,23 @@ const STUN_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    // TURN server placeholder for production:
+    // {
+    //   urls: 'turn:your-turn-server.com:3478',
+    //   username: 'your-username',
+    //   credential: 'your-credential',
+    // },
   ],
 };
 
 interface PeerData {
   connection: RTCPeerConnection;
+}
+
+interface RemoteMediaState {
+  audio: boolean;
+  video: boolean;
+  screen: boolean;
 }
 
 function log(...args: any[]) {
@@ -34,11 +50,16 @@ function log(...args: any[]) {
 export default function RoomMediaPanel({ socket, socketId, participants, userName }: Props) {
   const [mediaActive, setMediaActive] = useState(false);
   const [micMuted, setMicMuted] = useState(true);
+  const [cameraOff, setCameraOff] = useState(true);
+  const [screenSharing, setScreenSharing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [minimized, setMinimized] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [speaking, setSpeaking] = useState(false);
+  const [screenShareBy, setScreenShareBy] = useState<string | null>(null);
+  const [screenShareName, setScreenShareName] = useState('');
+  const [showScreenPanel, setShowScreenPanel] = useState(true);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, PeerData>>(new Map());
@@ -50,10 +71,26 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   const speakingIntervalRef = useRef<number | null>(null);
   const participantsRef = useRef<Participant[]>([]);
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamsRef = useRef<Map<string, MediaStream | null>>(new Map());
+  const remoteMediaStatesRef = useRef<Map<string, RemoteMediaState>>(new Map());
+  const wasCameraOnRef = useRef(false);
+  const screenShareByRef = useRef<string | null>(null);
 
   socketRef.current = socket;
   socketIdRef.current = socketId;
   participantsRef.current = participants;
+  screenShareByRef.current = screenShareBy;
+
+  const [, forceUpdate] = useState(0);
+  const doForceUpdate = useCallback(() => forceUpdate(n => n + 1), []);
+
+  useEffect(() => {
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+  });
 
   // --- Speaking detection ---
   const startSpeakingDetection = useCallback((stream: MediaStream) => {
@@ -90,15 +127,43 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     setSpeaking(false);
   }, []);
 
-  // --- Helper: add local audio tracks to a PC (avoid duplicates) ---
+  // --- Core: replace or remove video track on all peer connections ---
+  function broadcastVideoTrack(track: MediaStreamTrack | null) {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+
+    peersRef.current.forEach((peer) => {
+      const sender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
+      if (track) {
+        if (sender) {
+          sender.replaceTrack(track).catch(() => {});
+        } else {
+          peer.connection.addTrack(track, stream);
+        }
+      } else if (sender) {
+        try { peer.connection.removeTrack(sender); } catch {}
+      }
+    });
+  }
+
+  // --- Add local audio/video tracks to a PC (avoid duplicates) ---
   function addLocalTracks(pc: RTCPeerConnection) {
     const stream = localStreamRef.current;
     if (!stream) return;
-    for (const track of stream.getAudioTracks()) {
-      const existing = pc.getSenders().find(s => s.track?.kind === 'audio' && s.track.enabled !== undefined);
+
+    const audioTrack = stream.getAudioTracks()[0];
+    if (audioTrack) {
+      const existing = pc.getSenders().find(s => s.track?.kind === 'audio');
       if (!existing) {
-        pc.addTrack(track, stream);
-        log('added local audio track to PC');
+        pc.addTrack(audioTrack, stream);
+      }
+    }
+
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack) {
+      const existing = pc.getSenders().find(s => s.track?.kind === 'video');
+      if (!existing) {
+        pc.addTrack(videoTrack, stream);
       }
     }
   }
@@ -111,7 +176,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       if (state === 'new' || state === 'connecting' || state === 'connected') {
         return existing;
       }
-      // Dead connection, close and recreate
       existing.connection.close();
       peersRef.current.delete(targetId);
     }
@@ -129,24 +193,31 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
     pc.ontrack = (e) => {
       if (!e.streams[0]) return;
-      log('remote track received from', targetId);
+      log('remote track received from', targetId, 'kind:', e.track.kind);
 
-      let audioEl = remoteAudioRefs.current.get(targetId);
-      if (!audioEl) {
-        audioEl = document.createElement('audio');
-        audioEl.autoplay = true;
-        audioEl.style.display = 'none';
-        document.body.appendChild(audioEl);
-        remoteAudioRefs.current.set(targetId, audioEl);
+      if (e.track.kind === 'audio') {
+        let audioEl = remoteAudioRefs.current.get(targetId);
+        if (!audioEl) {
+          audioEl = document.createElement('audio');
+          audioEl.autoplay = true;
+          audioEl.style.display = 'none';
+          document.body.appendChild(audioEl);
+          remoteAudioRefs.current.set(targetId, audioEl);
+        }
+        audioEl.srcObject = e.streams[0];
+        audioEl.play().catch((err: any) => {
+          if (err.name !== 'NotAllowedError') {
+            console.warn('[WebRTC] audio play error:', err);
+          }
+        });
+        log('remote audio playing from', targetId);
       }
 
-      audioEl.srcObject = e.streams[0];
-      audioEl.play().catch((err: any) => {
-        if (err.name !== 'NotAllowedError') {
-          console.warn('[WebRTC] audio play error:', err);
-        }
-      });
-      log('remote audio playing from', targetId);
+      if (e.track.kind === 'video') {
+        remoteStreamsRef.current.set(targetId, e.streams[0]);
+        doForceUpdate();
+        log('remote video stream stored for', targetId);
+      }
     };
 
     pc.oniceconnectionstatechange = () => {
@@ -182,6 +253,12 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       audioEl.remove();
       remoteAudioRefs.current.delete(targetId);
     }
+    remoteStreamsRef.current.delete(targetId);
+    if (screenShareByRef.current === targetId) {
+      setScreenShareBy(null);
+      setScreenShareName('');
+    }
+    doForceUpdate();
     log('removed peer', targetId);
   }
 
@@ -216,6 +293,165 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     }
   }
 
+  // --- Toggle camera ---
+  const toggleCamera = useCallback(async () => {
+    if (screenSharing) return;
+    setError('');
+
+    const wasOff = cameraOff;
+    setCameraOff(!wasOff);
+
+    if (!localStreamRef.current) return;
+
+    if (wasOff) {
+      try {
+        const camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        const videoTrack = camStream.getVideoTracks()[0];
+        localStreamRef.current.addTrack(videoTrack);
+        broadcastVideoTrack(videoTrack);
+
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStreamRef.current;
+        }
+      } catch (e: any) {
+        setCameraOff(true);
+        setError('Camera access denied');
+        return;
+      }
+    } else {
+      const videoTracks = localStreamRef.current.getVideoTracks();
+      videoTracks.forEach(t => {
+        localStreamRef.current?.removeTrack(t);
+        t.stop();
+      });
+      broadcastVideoTrack(null);
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+    }
+    doForceUpdate();
+
+    if (socketRef.current) {
+      socketRef.current.emit('media-state', {
+        enabled: { audio: !micMuted, video: !wasOff, screen: false },
+      });
+    }
+  }, [cameraOff, micMuted, screenSharing]);
+
+  // --- Start screen share ---
+  const startScreenShare = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+      });
+
+      const videoTrack = displayStream.getVideoTracks()[0];
+      videoTrack.onended = () => { stopScreenShare(); };
+
+      screenStreamRef.current = displayStream;
+
+      wasCameraOnRef.current = !cameraOff;
+
+      const localStream = localStreamRef.current;
+      if (localStream) {
+        const oldVideoTracks = localStream.getVideoTracks();
+        oldVideoTracks.forEach(t => {
+          localStream.removeTrack(t);
+          t.stop();
+        });
+        localStream.addTrack(videoTrack);
+      }
+
+      broadcastVideoTrack(videoTrack);
+
+      if (localVideoRef.current && localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+
+      setScreenSharing(true);
+      setCameraOff(false);
+      doForceUpdate();
+
+      if (socketRef.current) {
+        socketRef.current.emit('media-state', {
+          enabled: { audio: !micMuted, video: true, screen: true },
+        });
+      }
+    } catch (e: any) {
+      if (e.name === 'NotAllowedError' || e.message?.includes('permission')) {
+        setError('Screen sharing permission denied');
+      } else if (e.name === 'NotSupportedError') {
+        setError('Screen sharing not supported');
+      } else {
+        setError(e.message || 'Could not share screen');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [cameraOff, micMuted]);
+
+  // --- Stop screen share ---
+  const stopScreenShare = useCallback(() => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
+    }
+
+    const localStream = localStreamRef.current;
+    if (localStream) {
+      const oldTracks = localStream.getVideoTracks();
+      oldTracks.forEach(t => {
+        localStream.removeTrack(t);
+        t.stop();
+      });
+
+      if (wasCameraOnRef.current) {
+        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          .then(camStream => {
+            const camTrack = camStream.getVideoTracks()[0];
+            localStream.addTrack(camTrack);
+            broadcastVideoTrack(camTrack);
+            if (localVideoRef.current) {
+              localVideoRef.current.srcObject = localStream;
+            }
+            doForceUpdate();
+          })
+          .catch(() => {
+            broadcastVideoTrack(null);
+            if (localVideoRef.current) {
+              localVideoRef.current.srcObject = localStream;
+            }
+            doForceUpdate();
+          });
+      } else {
+        broadcastVideoTrack(null);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStream;
+        }
+        doForceUpdate();
+      }
+    }
+
+    setScreenSharing(false);
+    if (!wasCameraOnRef.current) {
+      setCameraOff(true);
+    }
+
+    if (socketRef.current) {
+      socketRef.current.emit('media-state', {
+        enabled: {
+          audio: !micMuted,
+          video: wasCameraOnRef.current ? true : false,
+          screen: false,
+        },
+      });
+    }
+  }, [micMuted]);
+
   // --- Signal handler ---
   useEffect(() => {
     if (!socket) return;
@@ -229,7 +465,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
       try {
         if (signal.type === 'offer') {
-          // Glare handling: if we have a local offer pending, rollback
           if (pc.signalingState === 'have-local-offer') {
             log('glare: rolling back local offer');
             await pc.setLocalDescription({ type: 'rollback' as unknown as RTCSdpType });
@@ -238,7 +473,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           log('set remote description (offer)');
 
-          // Add local tracks if available
           addLocalTracks(pc);
 
           const answer = await pc.createAnswer();
@@ -267,6 +501,35 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     return () => { socket.off('signal', handleSignal); };
   }, [socket]);
 
+  // --- Media state handler (tracks remote video/screen states) ---
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMediaState = ({ socketId: sid, enabled }: { socketId: string; enabled: { audio?: boolean; video?: boolean; screen?: boolean } }) => {
+      const state: RemoteMediaState = {
+        audio: !!enabled.audio,
+        video: !!enabled.video,
+        screen: !!enabled.screen,
+      };
+      remoteMediaStatesRef.current.set(sid, state);
+
+      if (enabled.screen) {
+        setScreenShareBy(sid);
+        const p = participantsRef.current.find(pp => pp.socketId === sid);
+        setScreenShareName(p?.name || 'Unknown');
+        setShowScreenPanel(true);
+      } else if (screenShareByRef.current === sid) {
+        setScreenShareBy(null);
+        setScreenShareName('');
+      }
+
+      doForceUpdate();
+    };
+
+    socket.on('media-state', handleMediaState);
+    return () => { socket.off('media-state', handleMediaState); };
+  }, [socket]);
+
   // --- Cleanup on unmount ---
   useEffect(() => {
     return () => {
@@ -287,6 +550,12 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       el.remove();
     });
     remoteAudioRefs.current.clear();
+    remoteStreamsRef.current.clear();
+
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
+    }
 
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => t.stop());
@@ -296,30 +565,36 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     log('cleaned up all');
   }
 
-  // --- Join Audio ---
-  const joinAudio = useCallback(async () => {
+  // --- Join Call ---
+  const joinCall = useCallback(async () => {
     setLoading(true);
     setError('');
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: false,
+        video: true,
       });
 
       localStreamRef.current = stream;
       stream.getAudioTracks().forEach(t => (t.enabled = false));
+      stream.getVideoTracks().forEach(t => (t.enabled = false));
       setMicMuted(true);
+      setCameraOff(true);
       setMediaActive(true);
       startSpeakingDetection(stream);
 
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+
       if (socketRef.current) {
-        socketRef.current.emit('media-state', { enabled: { audio: true, video: false } });
+        socketRef.current.emit('media-state', { enabled: { audio: true, video: false, screen: false } });
       }
 
       await connectToAllPeers();
     } catch (e: any) {
-      const msg = e.message || 'Could not access microphone';
+      const msg = e.message || 'Could not access microphone/camera';
       setError(msg);
       console.error('[WebRTC] getUserMedia error:', e);
     } finally {
@@ -338,19 +613,29 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     }
 
     if (socketRef.current) {
-      socketRef.current.emit('media-state', { enabled: { audio: !micMuted, video: false } });
+      socketRef.current.emit('media-state', {
+        enabled: {
+          audio: !micMuted,
+          video: screenSharing ? true : !cameraOff,
+          screen: screenSharing,
+        },
+      });
     }
-  }, [micMuted]);
+  }, [micMuted, cameraOff, screenSharing]);
 
-  // --- Leave Audio ---
-  const leaveAudio = useCallback(() => {
+  // --- Leave Call ---
+  const leaveCall = useCallback(() => {
     cleanupAll();
     setMediaActive(false);
     setMicMuted(true);
+    setCameraOff(true);
+    setScreenSharing(false);
+    setScreenShareBy(null);
+    setScreenShareName('');
     setError('');
 
     if (socketRef.current) {
-      socketRef.current.emit('media-state', { enabled: { audio: false, video: false } });
+      socketRef.current.emit('media-state', { enabled: { audio: false, video: false, screen: false } });
     }
   }, []);
 
@@ -406,23 +691,34 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     window.addEventListener('mouseup', onUp, { once: true });
   }, [position]);
 
+  // --- Get remote participants with video for tile rendering ---
+  const remoteParticipantsWithVideo = participantsRef.current
+    .filter(p => p.socketId !== socketIdRef.current)
+    .map(p => {
+      const state = remoteMediaStatesRef.current.get(p.socketId);
+      const stream = remoteStreamsRef.current.get(p.socketId) || null;
+      const hasVideo = state?.video || false;
+      const screenActive = state?.screen || false;
+      return { ...p, stream, hasVideo, screenActive };
+    });
+
+  const initial = userName.charAt(0).toUpperCase();
+
   if (!mediaActive) {
     return (
       <div className="flex items-center gap-2">
         <button
-          onClick={joinAudio}
+          onClick={joinCall}
           disabled={loading}
           className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl bg-white/[0.06] text-white/70 border border-white/[0.08] hover:bg-white/[0.1] hover:text-white/90 disabled:opacity-50 transition-all"
         >
           {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Phone className="w-3.5 h-3.5" />}
-          <span className="hidden sm:inline">{loading ? 'Connecting...' : 'Join Audio'}</span>
+          <span className="hidden sm:inline">{loading ? 'Connecting...' : 'Join Call'}</span>
         </button>
-        {error && <span className="text-[10px] text-red-400/70">{error}</span>}
+        {error && <span className="text-[10px] text-red-400/70 max-w-[120px] truncate">{error}</span>}
       </div>
     );
   }
-
-  const initial = userName.charAt(0).toUpperCase();
 
   // Minimized bubble
   if (minimized) {
@@ -450,7 +746,68 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
   return (
     <>
-      {/* Floating panel */}
+      {/* Screen Share Large Panel */}
+      {screenShareBy && showScreenPanel && (() => {
+        const shareStream = remoteStreamsRef.current.get(screenShareBy) || null;
+        const shareState = remoteMediaStatesRef.current.get(screenShareBy);
+        if (!shareState?.screen) return null;
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none p-4 sm:p-8">
+            <div
+              className="relative w-full max-w-5xl max-h-[calc(100vh-180px)] premium-glass-card rounded-2xl overflow-hidden border-shine pointer-events-auto shadow-[0_20px_80px_rgba(0,0,0,0.7)] animate-fade-in"
+              style={{ aspectRatio: '16/10' }}
+            >
+              <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2 bg-gradient-to-b from-black/80 via-black/40 to-transparent">
+                <div className="flex items-center gap-2">
+                  <Monitor className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-xs font-medium text-white/80">
+                    {screenShareName}&apos;s Screen
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setShowScreenPanel(false)}
+                    className="p-1 rounded-lg hover:bg-white/[0.1] text-white/50 hover:text-white/80 transition-all"
+                    title="Minimize"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => { setScreenShareBy(null); setScreenShareName(''); }}
+                    className="p-1 rounded-lg hover:bg-red-500/20 text-white/50 hover:text-red-400 transition-all"
+                    title="Close"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              <video
+                ref={el => { if (el && shareStream) el.srcObject = shareStream; }}
+                autoPlay
+                playsInline
+                className="w-full h-full object-contain bg-black/60"
+              />
+              <div className="absolute bottom-0 left-0 right-0 z-20 px-4 py-2 bg-gradient-to-t from-black/60 to-transparent">
+                <span className="text-[10px] text-white/40 font-mono">Live • Shared screen</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Screen Share minimized indicator (when panel hidden) */}
+      {screenShareBy && !showScreenPanel && (
+        <button
+          onClick={() => setShowScreenPanel(true)}
+          className="fixed left-4 bottom-20 z-[100] premium-glass-card rounded-xl px-3 py-2 border-shine flex items-center gap-2 shadow-[0_8px_32px_rgba(0,0,0,0.6)] animate-slide-down"
+        >
+          <Monitor className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="text-[10px] text-white/60 font-medium">{screenShareName}&apos;s Screen</span>
+          <Maximize2 className="w-3 h-3 text-white/40" />
+        </button>
+      )}
+
+      {/* Floating panel with video tiles */}
       <div
         className="fixed z-[9999] pointer-events-none select-none"
         style={{
@@ -459,15 +816,15 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
           transform: position.x !== 0 || position.y !== 0 ? `translateX(${position.x}px)` : undefined,
         }}
       >
-        <div className="sm:w-[160px] w-[120px] premium-glass-card rounded-xl overflow-hidden border-shine shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+        <div className="w-[180px] sm:w-[220px] premium-glass-card rounded-xl overflow-hidden border-shine shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
           {/* Header drag handle */}
           <div
             onMouseDown={handleMouseDown}
-            className="flex items-center justify-between px-2 py-1 bg-white/[0.03] border-b border-white/[0.06] cursor-grab active:cursor-grabbing pointer-events-auto"
+            className="flex items-center justify-between px-2.5 py-1.5 bg-white/[0.03] border-b border-white/[0.06] cursor-grab active:cursor-grabbing pointer-events-auto"
           >
             <div className="flex items-center gap-1.5">
               <GripHorizontal className="w-2.5 h-2.5 text-white/30" />
-              <span className="text-[9px] text-white/40 font-mono font-medium truncate max-w-[60px]">{userName}</span>
+              <span className="text-[9px] text-white/40 font-mono font-medium truncate max-w-[80px]">{userName}</span>
             </div>
             <div className="flex items-center gap-1">
               {participants.length > 1 && (
@@ -476,48 +833,103 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
                   <span>{participants.length}</span>
                 </div>
               )}
-              <button onClick={() => setMinimized(true)} className="p-0.5 rounded hover:bg-white/[0.06] text-white/40 hover:text-white/70 transition-all pointer-events-auto">
+              <button
+                onClick={() => { setMinimized(true); setShowScreenPanel(false); }}
+                className="p-0.5 rounded hover:bg-white/[0.06] text-white/40 hover:text-white/70 transition-all pointer-events-auto"
+              >
                 <ChevronDown className="w-3 h-3" />
               </button>
             </div>
           </div>
 
-          {/* Avatar/speaking indicator area */}
-          <div className="relative h-[76px] bg-[#0a0a0e] flex items-center justify-center">
-            <div className={`sm:w-10 sm:h-10 w-7 h-7 rounded-full flex items-center justify-center sm:text-base text-xs font-bold transition-all ${
-              speaking
-                ? 'bg-emerald-500/20 text-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.2)]'
-                : 'bg-white/[0.06] text-white/50'
-            }`}>
-              {initial}
-            </div>
-            {speaking && (
-              <>
-                <div className="absolute inset-0 pointer-events-none">
-                  <div className="absolute inset-1 sm:inset-2 rounded-full bg-emerald-400/5 blur-xl animate-pulse" />
+          <div className="p-2 space-y-2 pointer-events-auto">
+            {/* Local video tile */}
+            <div className="relative rounded-lg overflow-hidden bg-[#0a0a0e] border border-white/[0.06] h-[100px] sm:h-[120px]">
+              {!cameraOff ? (
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
+                    speaking
+                      ? 'bg-emerald-500/20 text-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.2)]'
+                      : 'bg-white/[0.06] text-white/50'
+                  }`}>
+                    {initial}
+                  </div>
                 </div>
-                <div className="absolute inset-2 rounded-full border border-emerald-400/20 animate-ping" />
-              </>
-            )}
-            {!micMuted && !speaking && (
-              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
-                <div className="w-0.5 h-2 bg-emerald-400/30 rounded-full animate-pulse" />
-                <div className="w-0.5 h-3 bg-emerald-400/40 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
-                <div className="w-0.5 h-2 bg-emerald-400/30 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
-              </div>
-            )}
+              )}
 
-            {/* Bottom overlay */}
-            <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/70 to-transparent">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1">
-                  <span className="text-[8px] text-white/60 font-medium drop-shadow-md">You</span>
-                  {speaking && <span className="text-[7px] text-emerald-400/80 font-medium">speaking</span>}
+              {/* Speaking ring */}
+              {speaking && (
+                <div className="absolute inset-0 pointer-events-none">
+                  <div className="absolute inset-1 rounded-lg border border-emerald-400/20 animate-ping" />
                 </div>
-                <div className={`p-[1px] rounded ${micMuted ? 'bg-red-400/40' : 'bg-emerald-400/40'}`}>
-                  {micMuted ? <MicOff className="sm:w-2.5 sm:h-2.5 w-2 h-2 text-red-300" /> : <Mic className="sm:w-2.5 sm:h-2.5 w-2 h-2 text-emerald-300" />}
+              )}
+
+              {/* Label overlay */}
+              <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] text-white/70 font-medium drop-shadow-md">You</span>
+                    {screenSharing && (
+                      <Monitor className="w-2.5 h-2.5 text-emerald-400" />
+                    )}
+                    {speaking && <span className="text-[7px] text-emerald-400/80 font-medium">speaking</span>}
+                  </div>
+                  <div className={`p-[1px] rounded ${micMuted ? 'bg-red-400/40' : 'bg-emerald-400/40'}`}>
+                    {micMuted ? <MicOff className="w-2 h-2 text-red-300" /> : <Mic className="w-2 h-2 text-emerald-300" />}
+                  </div>
                 </div>
               </div>
+            </div>
+
+            {/* Remote participant video tiles */}
+            <div className="space-y-2 max-h-[240px] sm:max-h-[300px] overflow-y-auto scrollbar-none">
+              {remoteParticipantsWithVideo.map(p => {
+                const rState = remoteMediaStatesRef.current.get(p.socketId);
+                const hasVideo = rState?.video && p.stream;
+                const isScreen = rState?.screen || false;
+                return (
+                  <div
+                    key={p.socketId}
+                    className="relative rounded-lg overflow-hidden bg-[#0a0a0e] border border-white/[0.06] h-[80px] sm:h-[90px]"
+                  >
+                    {hasVideo ? (
+                      <video
+                        ref={el => { if (el && p.stream) el.srcObject = p.stream; }}
+                        autoPlay
+                        playsInline
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-white/[0.06] text-white/50">
+                          {p.name.charAt(0).toUpperCase()}
+                        </div>
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[8px] text-white/60 font-medium drop-shadow-md truncate max-w-[60px]">
+                          {p.name}
+                        </span>
+                        {isScreen && <Monitor className="w-2 h-2 text-emerald-400" />}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {remoteParticipantsWithVideo.length === 0 && (
+                <div className="py-4 text-center">
+                  <span className="text-[9px] text-white/30 font-mono">No other participants</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -525,6 +937,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
       {/* Control dock */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)] pointer-events-auto">
+        {/* Mic toggle */}
         <button
           onClick={toggleMic}
           className={`p-2.5 rounded-xl transition-all duration-200 active:scale-90 ${
@@ -535,21 +948,58 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
           title={micMuted ? 'Unmute mic' : 'Mute mic'}
         >
           <div className="relative">
-            {micMuted ? (
-              <MicOff className="w-4 h-4" />
-            ) : (
-              <Mic className="w-4 h-4 animate-[fadeIn_0.2s_ease-out]" />
-            )}
+            {micMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4 animate-[fadeIn_0.2s_ease-out]" />}
             {!micMuted && speaking && (
               <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
             )}
           </div>
         </button>
-        <div className="w-px h-6 bg-white/[0.08] mx-1" />
+
+        {/* Camera toggle */}
         <button
-          onClick={leaveAudio}
+          onClick={toggleCamera}
+          disabled={screenSharing}
+          className={`p-2.5 rounded-xl transition-all duration-200 active:scale-90 ${
+            screenSharing
+              ? 'bg-white/[0.03] text-white/30 cursor-not-allowed'
+              : cameraOff
+                ? 'bg-red-500/15 text-red-400 hover:bg-red-500/25'
+                : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'
+          }`}
+          title={screenSharing ? 'Stop screen share to toggle camera' : cameraOff ? 'Turn on camera' : 'Turn off camera'}
+        >
+          {cameraOff ? <CameraOff className="w-4 h-4" /> : <Camera className="w-4 h-4" />}
+        </button>
+
+        <div className="w-px h-6 bg-white/[0.08] mx-1" />
+
+        {/* Screen share toggle */}
+        <button
+          onClick={screenSharing ? stopScreenShare : startScreenShare}
+          disabled={loading}
+          className={`p-2.5 rounded-xl transition-all duration-200 active:scale-90 ${
+            screenSharing
+              ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
+              : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'
+          }`}
+          title={screenSharing ? 'Stop sharing screen' : 'Share screen'}
+        >
+          {screenSharing ? (
+            <MonitorOff className="w-4 h-4" />
+          ) : loading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Monitor className="w-4 h-4" />
+          )}
+        </button>
+
+        <div className="w-px h-6 bg-white/[0.08] mx-1" />
+
+        {/* Leave call */}
+        <button
+          onClick={leaveCall}
           className="p-2.5 rounded-xl bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all duration-200 active:scale-90"
-          title="Leave audio"
+          title="Leave call"
         >
           <PhoneOff className="w-4 h-4" />
         </button>
