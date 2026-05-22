@@ -262,6 +262,21 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       }
     };
 
+    pc.onnegotiationneeded = async () => {
+      try {
+        if (pc.signalingState !== 'stable') return;
+        const offer = await pc.createOffer();
+        if (pc.signalingState !== 'stable') return;
+        await pc.setLocalDescription(offer);
+        socketRef.current?.emit('signal', {
+          to: targetId,
+          signal: { type: 'offer', sdp: pc.localDescription },
+        });
+      } catch (e) {
+        console.error('[WebRTC] negotiation error:', e);
+      }
+    };
+
     const peerData: PeerData = { connection: pc };
     peersRef.current.set(targetId, peerData);
     log('PC created for', targetId);
@@ -615,23 +630,33 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     log('cleaned up all');
   }
 
-  // --- Join Call ---
+  // --- Join Call (audio required, video optional) ---
   const joinCall = useCallback(async () => {
     setLoading(true);
     setError('');
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: VIDEO_CONSTRAINTS,
-      });
+      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      let videoTrack: MediaStreamTrack | null = null;
+      try {
+        const camStream = await navigator.mediaDevices.getUserMedia({
+          video: VIDEO_CONSTRAINTS,
+        });
+        videoTrack = camStream.getVideoTracks()[0];
+        videoTrack.enabled = false;
+      } catch {
+        // Camera unavailable — join with audio only
+      }
+
+      const stream = new MediaStream();
+      audioStream.getAudioTracks().forEach(t => stream.addTrack(t));
+      if (videoTrack) stream.addTrack(videoTrack);
 
       localStreamRef.current = stream;
       stream.getAudioTracks().forEach(t => (t.enabled = false));
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) videoTrack.enabled = false;
       setMicMuted(true);
-      setCameraOff(true);
+      setCameraOff(!videoTrack);
       setMediaActive(true);
       startSpeakingDetection(stream);
 
@@ -640,12 +665,14 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       }
 
       if (socketRef.current) {
-        socketRef.current.emit('media-state', { enabled: { audio: true, video: false, screen: false } });
+        socketRef.current.emit('media-state', {
+          enabled: { audio: true, video: !!videoTrack, screen: false },
+        });
       }
 
       await connectToAllPeers();
     } catch (e: any) {
-      const msg = e.message || 'Could not access microphone/camera';
+      const msg = e.message || 'Could not access microphone';
       setError(msg);
       console.error('[WebRTC] getUserMedia error:', e);
     } finally {
