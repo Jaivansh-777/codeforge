@@ -223,7 +223,7 @@ export default function Whiteboard({ socket, roomId }: Props) {
     resize();
 
     return () => ro.disconnect();
-  }, [actions]);
+  }, []);
 
   const redrawAll = useCallback(() => {
     const canvas = canvasRef.current;
