@@ -4,9 +4,10 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Mic, MicOff, Phone, PhoneOff, Loader2, ChevronDown,
   Camera, CameraOff, Monitor, MonitorOff,
-  X, Maximize2, Minimize2, Wifi, WifiOff, RefreshCw
+  X, Maximize2, Minimize2, Wifi, WifiOff, RefreshCw, Eye, EyeOff
 } from 'lucide-react';
 import type { Socket } from 'socket.io-client';
+import toast from 'react-hot-toast';
 
 interface Participant {
   socketId: string;
@@ -59,6 +60,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   const [screenShareName, setScreenShareName] = useState('');
   const [showScreenPanel, setShowScreenPanel] = useState(true);
   const [connStates, setConnStates] = useState<Map<string, string>>(new Map());
+  const [showLocalPreview, setShowLocalPreview] = useState(false);
 
   const lsRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -295,7 +297,10 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         bcastVid(vt, true);
         old.forEach(t => { ls.removeTrack(t); t.stop(); });
       }
-      setScreenSharing(true); setCameraOff(false); force();
+      setScreenSharing(true); setCameraOff(false); setShowLocalPreview(false); force();
+      toast('Tip: Share entire screen or a different window instead of this browser tab to avoid mirror effect.', {
+        duration: 5000, style: { background: 'rgba(10,10,14,0.95)', color: '#e4e4e7', border: '1px solid rgba(251,191,36,0.3)', fontSize: '12px', borderRadius: '12px' },
+      });
       sRef.current?.emit('media-state', { enabled: { audio: !micMuted, video: true, screen: true } });
     } catch (e: any) {
       if (e.name === 'NotAllowedError') setError('Screen share denied');
@@ -604,6 +609,38 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
           </div>
         </div>
       </div>
+
+      {/* Local Screen Share Preview - minimized by default to avoid mirror effect */}
+      {screenSharing && (
+        <div className="fixed left-4 bottom-24 z-[9999]">
+          {showLocalPreview ? (
+            <div className="premium-glass-card rounded-xl overflow-hidden border-shine shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
+              style={{ width: '220px' }}>
+              <div className="flex items-center justify-between px-2 py-1.5 bg-black/50">
+                <div className="flex items-center gap-1.5">
+                  <Monitor className="w-3 h-3 text-emerald-400" />
+                  <span className="text-[9px] text-white/60 font-medium">Your Screen</span>
+                </div>
+                <button onClick={() => setShowLocalPreview(false)}
+                  className="p-0.5 rounded hover:bg-white/[0.1] text-white/40 hover:text-white/70 transition-all">
+                  <Minimize2 className="w-3 h-3" />
+                </button>
+              </div>
+              <video ref={el => { if (el && lsRef.current) el.srcObject = lsRef.current; }}
+                autoPlay playsInline muted
+                className="w-full object-contain bg-black/60"
+                style={{ aspectRatio: '16/9' }} />
+            </div>
+          ) : (
+            <button onClick={() => setShowLocalPreview(true)}
+              className="premium-glass-card rounded-xl px-2.5 py-1.5 border-shine flex items-center gap-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] hover:scale-105 transition-transform active:scale-95">
+              <Monitor className="w-3 h-3 text-emerald-400" />
+              <span className="text-[9px] text-white/50 font-medium">Screen</span>
+              <Maximize2 className="w-2.5 h-2.5 text-white/30" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Control dock */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)] pointer-events-auto">

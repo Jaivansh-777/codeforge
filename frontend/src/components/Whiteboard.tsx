@@ -457,7 +457,7 @@ export default function Whiteboard({ socket, roomId }: Props) {
   return (
     <div className="flex flex-col h-full premium-glass-card rounded-[28px] overflow-hidden border-shine">
       {/* Toolbar */}
-      <div className="flex items-center gap-1 px-2 sm:gap-2 sm:px-4 py-2 border-b border-white/[0.06] bg-white/[0.02] shrink-0 overflow-x-auto scrollbar-none">
+      <div className="flex items-center gap-1 px-2 sm:gap-2 sm:px-4 py-2 border-b border-white/[0.06] bg-white/[0.02] shrink-0 overflow-x-auto scrollbar-none relative z-[1000]">
         {/* Tools */}
         <div className="flex items-center gap-0.5 sm:gap-1 mr-1 sm:mr-2">
           {TOOLS.map(t => {
@@ -491,7 +491,7 @@ export default function Whiteboard({ socket, roomId }: Props) {
             <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full border border-white/20" style={{ backgroundColor: color }} />
           </button>
           {showColorPicker && (
-            <div className="absolute top-full left-0 mt-1 z-50 p-2 premium-glass-dropdown rounded-xl shadow-xl min-w-[160px]">
+            <div className="absolute top-full left-0 mt-1 z-[9999] p-2 premium-glass-dropdown rounded-xl shadow-xl min-w-[160px]">
               <div className="grid grid-cols-6 gap-1 mb-2">
                 {COLORS.map(c => (
                   <button
@@ -527,7 +527,7 @@ export default function Whiteboard({ socket, roomId }: Props) {
             {strokeSize}px
           </button>
           {showStrokePicker && (
-            <div className="absolute top-full left-0 mt-1 z-50 p-2 premium-glass-dropdown rounded-xl shadow-xl min-w-[120px]">
+            <div className="absolute top-full left-0 mt-1 z-[9999] p-2 premium-glass-dropdown rounded-xl shadow-xl min-w-[120px]">
               {STROKE_SIZES.map(s => (
                 <button
                   key={s}
@@ -594,7 +594,7 @@ export default function Whiteboard({ socket, roomId }: Props) {
         {/* Text input overlay */}
         {textInputVisible && textPosRef.current && (
           <div
-            className="absolute z-50"
+            className="absolute z-[9999]"
             style={{ left: textPosRef.current.x, top: textPosRef.current.y }}
           >
             <textarea
