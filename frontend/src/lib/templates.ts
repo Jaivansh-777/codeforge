@@ -1,15 +1,15 @@
 export const CODE_TEMPLATES: Record<string, string> = {
-  python: `print("Hello CodeForge!")
+  python: `print("Hello from Cyber Classes Sirsa!")
 
 name = "Developer"
-print(f"Welcome, {name}!")
+print(f"Welcome, {name}! Learn - Build - Secure")
 `,
 
   c: `#include <stdio.h>
 
 int main() {
-    printf("Hello CodeForge!\\n");
-    printf("Running C in Docker sandbox\\n");
+    printf("Hello from Cyber Classes Sirsa!\\n");
+    printf("Learn - Build - Secure\\n");
     return 0;
 }
 `,
@@ -18,32 +18,32 @@ int main() {
 using namespace std;
 
 int main() {
-    cout << "Hello CodeForge!" << endl;
-    cout << "Running C++ in Docker sandbox" << endl;
+    cout << "Hello from Cyber Classes Sirsa!" << endl;
+    cout << "Learn - Build - Secure" << endl;
     return 0;
 }
 `,
 
-  javascript: `console.log("Hello CodeForge!");
-console.log("Running JavaScript in Docker sandbox");
+  javascript: `console.log("Hello from Cyber Classes Sirsa!");
+console.log("Learn - Build - Secure");
 `,
 
   php: `<?php
-echo "Hello CodeForge!\\n";
-echo "Running PHP in Docker sandbox\\n";
+echo "Hello from Cyber Classes Sirsa!\\n";
+echo "Learn - Build - Secure\\n";
 `,
 
   java: `public class Main {
     public static void main(String[] args) {
-        System.out.println("Hello CodeForge!");
-        System.out.println("Running Java in Docker sandbox");
+        System.out.println("Hello from Cyber Classes Sirsa!");
+        System.out.println("Learn - Build - Secure");
     }
 }
 `,
 
   assembly: `; NASM x86-64 Assembly
 section .data
-    msg db 'Hello CodeForge!', 0xa
+    msg db 'Hello from Cyber Classes Sirsa!', 0xa
     len equ $ - msg
 
 section .text

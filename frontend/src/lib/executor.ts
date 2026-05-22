@@ -72,7 +72,7 @@ export async function executeCode(params: { language: string; code: string; inpu
   const config = LANG_CONFIG[params.language];
   if (!config) throw new Error(`Unsupported language: ${params.language}`);
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codeforge-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cyberclasses-'));
   const startTime = Date.now();
 
   try {

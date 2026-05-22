@@ -7,7 +7,7 @@ const EXAMPLES = [
   {
     name: 'Hello World',
     code: `section .data
-    msg db 'Hello, CodeForge!', 0xa
+    msg db 'Hello, Cyber Classes Sirsa!', 0xa
     len equ $ - msg
 
 section .text

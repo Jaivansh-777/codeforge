@@ -113,7 +113,7 @@ export default function CompilerPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `codeforge.${ext}`;
+    a.download = `cyber-classes.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -182,7 +182,7 @@ export default function CompilerPage() {
                   <Terminal className="w-3.5 h-3.5 text-white" />
                 </div>
                 <span className="text-sm font-bold tracking-tight text-white/90 hidden sm:inline">
-                  Code<span className="text-white/50">Forge</span>
+                  Cyber<span className="text-white/50"> Classes Sirsa</span>
                 </span>
               </div>
               <div className="h-5 w-[1px] bg-white/[0.06] hidden sm:block" />

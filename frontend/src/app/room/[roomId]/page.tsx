@@ -45,12 +45,12 @@ const LANG_DISPLAY: Record<string, { name: string; ext: string }> = {
 };
 
 const CODE_TEMPLATES: Record<string, string> = {
-  python: `print("Hello CodeForge!")`,
-  c: `#include <stdio.h>\nint main() { printf("Hello CodeForge!\\n"); return 0; }`,
-  cpp: `#include <iostream>\nint main() { std::cout << "Hello CodeForge!" << std::endl; return 0; }`,
-  javascript: `console.log("Hello CodeForge!");`,
-  php: `<?php echo "Hello CodeForge!\\n";`,
-  java: `public class Main { public static void main(String[] a) { System.out.println("Hello CodeForge!"); } }`,
+  python: `print("Hello from Cyber Classes Sirsa!")`,
+  c: `#include <stdio.h>\nint main() { printf("Hello from Cyber Classes Sirsa!\\n"); return 0; }`,
+  cpp: `#include <iostream>\nint main() { std::cout << "Hello from Cyber Classes Sirsa!" << std::endl; return 0; }`,
+  javascript: `console.log("Hello from Cyber Classes Sirsa!");`,
+  php: `<?php echo "Hello from Cyber Classes Sirsa!\\n";`,
+  java: `public class Main { public static void main(String[] a) { System.out.println("Hello from Cyber Classes Sirsa!"); } }`,
   assembly: `section .data\nmsg db 'Hello',0xa\nlen equ $ - msg\nsection .text\nglobal _start\n_start:\nmov rax,1; mov rdi,1; mov rsi,msg; mov rdx,len; syscall; mov rax,60; xor rdi,rdi; syscall`,
 };
 
@@ -302,7 +302,7 @@ function RoomContent() {
                   <Terminal className="w-3.5 h-3.5 text-white" />
                 </div>
                 <span className="text-sm font-bold tracking-tight text-white/90 hidden sm:inline">
-                  Code<span className="text-white/50">Forge</span>
+                  Cyber<span className="text-white/50"> Classes Sirsa</span>
                 </span>
               </div>
               <div className="h-5 w-[1px] bg-white/[0.06] hidden sm:block" />

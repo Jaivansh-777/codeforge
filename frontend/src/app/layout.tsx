@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'CodeForge - Premium Multi-Language Online Compiler',
-  description: 'Compile and run Python, C, C++, JavaScript, PHP, Java, Assembly, and more. A premium cloud-based development environment with Docker sandboxed execution.',
-  keywords: 'online compiler, code editor, python, javascript, c++, java, docker, sandbox',
+  title: 'Cyber Classes Sirsa - Premium Multi-Language Compiler Lab',
+  description: 'Learn, build, and secure with Cyber Classes Sirsa. Compile and run Python, C, C++, JavaScript, PHP, Java, Assembly, and more in a premium cloud-based development environment with Docker sandboxed execution.',
+  keywords: 'cyber classes sirsa, online compiler, code editor, python, javascript, c++, java, docker, sandbox, cybersecurity',
 };
 
 export default function RootLayout({

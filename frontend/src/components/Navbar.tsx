@@ -24,7 +24,7 @@ export default function Navbar() {
               <Terminal className="w-3.5 h-3.5 text-white" />
             </div>
             <span className="text-sm font-bold tracking-tight text-white/90">
-              Code<span className="text-white/50">Forge</span>
+              Cyber<span className="text-white/50"> Classes Sirsa</span>
             </span>
           </Link>
 
