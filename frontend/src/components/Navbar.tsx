@@ -3,13 +3,13 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Menu, X, ArrowRight, Terminal } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/compiler', label: 'Compiler' },
   { href: '#features', label: 'Features' },
   { href: '#docs', label: 'Docs' },
-  { href: '#pricing', label: 'Pricing' },
 ];
 
 export default function Navbar() {
@@ -56,27 +56,35 @@ export default function Navbar() {
         </div>
       </div>
 
-      {open && (
-        <div className="md:hidden mt-2 mx-4 sm:mx-6 glass-nav rounded-2xl px-4 py-4 space-y-1 animate-slide-down shadow-[0_8px_40px_rgba(0,0,0,0.5)]">
-          {navLinks.map(link => (
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -12, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="md:hidden mt-2 mx-4 sm:mx-6 glass-nav rounded-2xl px-4 py-4 space-y-1 shadow-[0_8px_40px_rgba(0,0,0,0.5)]"
+          >
+            {navLinks.map(link => (
+              <Link
+                key={link.label}
+                href={link.href}
+                className="block px-3 py-2 text-sm text-white/50 hover:text-white/90 rounded-lg hover:bg-white/[0.04] transition-colors"
+                onClick={() => setOpen(false)}
+              >
+                {link.label}
+              </Link>
+            ))}
             <Link
-              key={link.label}
-              href={link.href}
-              className="block px-3 py-2 text-sm text-white/50 hover:text-white/90 rounded-lg hover:bg-white/[0.04] transition-colors"
+              href="/compiler"
+              className="block text-center px-4 py-2 bg-white text-black text-sm font-semibold rounded-lg mt-3"
               onClick={() => setOpen(false)}
             >
-              {link.label}
+              Start Coding
             </Link>
-          ))}
-          <Link
-            href="/compiler"
-            className="block text-center px-4 py-2 bg-white text-black text-sm font-semibold rounded-lg mt-3"
-            onClick={() => setOpen(false)}
-          >
-            Start Coding
-          </Link>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </nav>
   );
 }

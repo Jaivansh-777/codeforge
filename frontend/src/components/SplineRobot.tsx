@@ -7,13 +7,16 @@ export default function SplineRobot() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const initRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || initRef.current) return;
+    initRef.current = true;
 
     const scriptId = 'spline-viewer-script';
 
     const initSpline = () => {
+      if (!containerRef.current) return;
       const viewer = document.createElement('spline-viewer');
       viewer.setAttribute('url', 'https://prod.spline.design/m9j3JJ9JbW9ddMBy/scene.splinecode');
       viewer.setAttribute('loading-anim-type', 'none');
@@ -29,12 +32,12 @@ export default function SplineRobot() {
       };
       viewer.addEventListener('load', onLoad);
 
-      const fallback = setTimeout(() => setLoaded(true), 12000);
+      const fallback = setTimeout(() => {
+        if (!loaded) setLoaded(true);
+      }, 10000);
 
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
-        containerRef.current.appendChild(viewer);
-      }
+      containerRef.current.innerHTML = '';
+      containerRef.current.appendChild(viewer);
 
       return () => {
         clearTimeout(fallback);
@@ -42,57 +45,50 @@ export default function SplineRobot() {
       };
     };
 
-    if (document.querySelector(`script#${scriptId}`)) {
+    const startSpline = () => {
       if (customElements.get('spline-viewer')) {
         initSpline();
       } else {
-        const checkInterval = setInterval(() => {
-          if (customElements.get('spline-viewer')) {
-            clearInterval(checkInterval);
-            initSpline();
-          }
-        }, 100);
-        setTimeout(() => clearInterval(checkInterval), 12000);
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.type = 'module';
+        script.src = 'https://unpkg.com/@splinetool/viewer@1.12.94/build/spline-viewer.js';
+        script.onload = () => setTimeout(initSpline, 150);
+        script.onerror = () => { setError(true); setLoaded(true); };
+        document.body.appendChild(script);
       }
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = scriptId;
-    script.type = 'module';
-    script.src = 'https://unpkg.com/@splinetool/viewer@1.12.94/build/spline-viewer.js';
-    script.onload = () => setTimeout(initSpline, 150);
-    script.onerror = () => { setError(true); setLoaded(true); };
-    document.body.appendChild(script);
-
-    return () => {
-      if (script.parentNode) script.parentNode.removeChild(script);
     };
-  }, []);
+
+    if (document.querySelector(`script#${scriptId}`)) {
+      startSpline();
+    } else {
+      startSpline();
+    }
+  }, [loaded]);
 
   return (
     <div className="relative w-full h-full flex items-center justify-center">
       {/* Orbital rings */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(90vw,500px)] h-[min(90vw,500px)] rounded-full border border-white/[0.04] animate-orbit" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(68vw,380px)] h-[min(68vw,380px)] rounded-full border border-dashed border-white/[0.025] animate-orbit-reverse" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(80vw,440px)] h-[min(80vw,440px)] rounded-full border border-white/[0.02] animate-orbit" style={{ animationDuration: '25s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(80vw,420px)] h-[min(80vw,420px)] rounded-full border border-white/[0.04] animate-orbit" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(58vw,320px)] h-[min(58vw,320px)] rounded-full border border-dashed border-white/[0.025] animate-orbit-reverse" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(70vw,370px)] h-[min(70vw,370px)] rounded-full border border-white/[0.02] animate-orbit" style={{ animationDuration: '25s' }} />
       </div>
 
       {/* Orbital dots */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(90vw,500px)] h-[min(90vw,500px)] animate-orbit">
-          {Array.from({ length: 16 }).map((_, i) => {
-            const angle = (i / 16) * 360;
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 hidden sm:block">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(80vw,420px)] h-[min(80vw,420px)] animate-orbit">
+          {Array.from({ length: 12 }).map((_, i) => {
+            const angle = (i / 12) * 360;
             const rad = (angle * Math.PI) / 180;
-            const r = 250;
+            const r = 210;
             const x = Math.cos(rad) * r;
             const y = Math.sin(rad) * r;
             return (
               <div
                 key={i}
-                className="absolute w-1 h-1 bg-white/60 rounded-full shadow-[0_0_4px_rgba(255,255,255,0.3)]"
-                style={{ left: `calc(50% + ${x}px)`, top: `calc(50% + ${y}px)`, opacity: 0.2 + Math.random() * 0.5 }}
+                className="absolute w-1 h-1 bg-white/50 rounded-full shadow-[0_0_4px_rgba(255,255,255,0.2)]"
+                style={{ left: `calc(50% + ${x}px)`, top: `calc(50% + ${y}px)`, opacity: 0.15 + Math.random() * 0.4 }}
               />
             );
           })}
@@ -100,7 +96,7 @@ export default function SplineRobot() {
       </div>
 
       {/* Glowing sphere behind robot */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(50vw,280px)] h-[min(50vw,280px)] rounded-full bg-gradient-to-br from-cyan-400/5 via-indigo-400/5 to-purple-400/5 blur-[80px] animate-pulse pointer-events-none z-0" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(40vw,220px)] h-[min(40vw,220px)] rounded-full bg-gradient-to-br from-cyan-400/5 via-indigo-400/5 to-purple-400/5 blur-[80px] animate-pulse pointer-events-none z-0" />
 
       {/* Loading skeleton */}
       {!loaded && !error && (
@@ -129,21 +125,21 @@ export default function SplineRobot() {
       )}
 
       {/* Spline container */}
-      <div className="absolute inset-0 overflow-hidden rounded-2xl z-10" style={{ clipPath: 'inset(0 0 8px 0)' }}>
+      <div className="absolute inset-0 overflow-hidden rounded-2xl z-10" style={{ clipPath: 'inset(0 0 6px 0)' }}>
         <div
-          className="absolute inset-x-0 bottom-0 h-16 z-20 pointer-events-none"
+          className="absolute inset-x-0 bottom-0 h-14 z-20 pointer-events-none"
           style={{
             background: 'linear-gradient(to top, #050505 0%, #050505 30%, transparent 100%)',
           }}
         />
         <div
-          className="absolute bottom-0 right-0 w-40 h-14 z-20 pointer-events-none"
+          className="absolute bottom-0 right-0 w-36 h-12 z-20 pointer-events-none"
           style={{ background: '#050505' }}
         />
         <div
           ref={containerRef}
-          className={`w-full h-full transition-opacity duration-1000 scale-[1.4] sm:scale-110 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-          style={{ minHeight: '70vh', maxHeight: '780px', position: 'relative', zIndex: 2 }}
+          className={`w-full h-full transition-opacity duration-1000 scale-[1.3] sm:scale-105 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          style={{ minHeight: '60vh', maxHeight: '680px', position: 'relative', zIndex: 2 }}
         />
       </div>
     </div>

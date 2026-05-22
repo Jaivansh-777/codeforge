@@ -1,6 +1,6 @@
 'use client';
 
-import { Terminal, AlertCircle, CheckCircle, Clock, XCircle, Copy, Loader2, Ban } from 'lucide-react';
+import { Terminal, AlertCircle, CheckCircle, Clock, XCircle, Copy, Loader2, Ban, Zap } from 'lucide-react';
 import { ExecutionStats } from '@/lib/types';
 
 interface Props {
@@ -38,9 +38,15 @@ export default function OutputPanel({ output, error, loading, stats, onCopy }: P
             <Terminal className="w-3 h-3 text-white/50" />
           </div>
           <span className="text-[11px] font-bold text-white/40 uppercase tracking-widest">Output</span>
+          {loading && (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/[0.04] text-[10px] text-white/40 font-mono">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-pulse" />
+              running
+            </span>
+          )}
           {!loading && stats && (
             <Badge variant={isSuccess ? 'success' : error ? 'error' : 'info'}>
-              {isSuccess ? <CheckCircle className="w-2.5 h-2.5" /> : error ? <XCircle className="w-2.5 h-2.5" /> : <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>}
+              {isSuccess ? <CheckCircle className="w-2.5 h-2.5" /> : error ? <XCircle className="w-2.5 h-2.5" /> : <Zap className="w-2.5 h-2.5" />}
               {isSuccess ? 'Success' : error ? 'Error' : 'Info'}
             </Badge>
           )}
@@ -70,7 +76,12 @@ export default function OutputPanel({ output, error, loading, stats, onCopy }: P
 
       {/* Terminal body — glassy frosted surface */}
       <div className="flex-1 overflow-auto p-4">
-        <div className="h-full premium-glass-terminal rounded-2xl p-5 font-mono text-xs leading-relaxed">
+        <div className="h-full premium-glass-terminal rounded-2xl p-5 font-mono text-xs leading-relaxed relative overflow-hidden">
+          {/* Terminal scan line overlay */}
+          <div className="absolute inset-0 pointer-events-none opacity-[0.03]">
+            <div className="w-full h-full" style={{ background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.5) 2px, rgba(255,255,255,0.5) 4px)' }} />
+          </div>
+
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-3">
@@ -83,6 +94,10 @@ export default function OutputPanel({ output, error, loading, stats, onCopy }: P
                   <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-bounce" style={{ animationDelay: '0ms' }} />
                   <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-bounce" style={{ animationDelay: '150ms' }} />
                   <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+                {/* Matrix-style loading bar */}
+                <div className="w-48 h-1 rounded-full bg-white/[0.06] overflow-hidden mt-1">
+                  <div className="h-full w-full bg-gradient-to-r from-transparent via-white/30 to-transparent rounded-full shimmer-loading" />
                 </div>
               </div>
             </div>
@@ -99,7 +114,7 @@ export default function OutputPanel({ output, error, loading, stats, onCopy }: P
               </div>
             </div>
           ) : (
-            <div className="space-y-3 animate-fade-in">
+            <div className="space-y-3 animate-fade-in relative z-10">
               {error && (
                 <div className="flex items-start gap-3 p-3 bg-red-500/8 border border-red-500/12 rounded-xl">
                   <AlertCircle className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
@@ -117,6 +132,9 @@ export default function OutputPanel({ output, error, loading, stats, onCopy }: P
               )}
             </div>
           )}
+
+          {/* Bottom glow line */}
+          <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/[0.06] to-transparent pointer-events-none" />
         </div>
       </div>
 

@@ -57,7 +57,6 @@ export default function CompilerPage() {
 
     try {
       const result: ExecuteResponse = await executeCode(language, code, input);
-      console.log('[Compiler] Result:', result);
       setOutput(result.output || '');
       setError(result.error || '');
       setStats({
@@ -129,7 +128,6 @@ export default function CompilerPage() {
         <div className="absolute top-1/3 right-1/4 w-[600px] h-[600px] bg-white/[0.015] rounded-full blur-[150px]" />
         <div className="absolute bottom-1/4 left-1/5 w-[400px] h-[400px] bg-white/[0.01] rounded-full blur-[120px]" />
 
-        {/* Floating glass bubbles — black/white theme */}
         <div className="glass-bubble glass-bubble-1 w-24 h-24 top-[10%] left-[5%]" />
         <div className="glass-bubble glass-bubble-2 w-16 h-16 top-[55%] left-[2%]" />
         <div className="glass-bubble glass-bubble-3 w-28 h-28 top-[35%] right-[3%]" />
@@ -138,7 +136,6 @@ export default function CompilerPage() {
         <div className="glass-bubble glass-bubble-3 w-12 h-12 bottom-[35%] left-[15%]" />
         <div className="glass-bubble glass-bubble-1 w-18 h-18 top-[70%] right-[35%]" style={{ width: '72px', height: '72px' }} />
 
-        {/* Particle stars */}
         {Array.from({ length: 40 }).map((_, i) => (
           <div
             key={i}
@@ -153,6 +150,9 @@ export default function CompilerPage() {
           />
         ))}
       </div>
+
+      <div className="cyber-scanlines" />
+      <div className="cyber-grid" />
 
       <Toaster
         position="bottom-right"
@@ -273,12 +273,20 @@ export default function CompilerPage() {
         <button onClick={handleReset} className="p-1.5 rounded-lg text-white/40 hover:bg-white/[0.04] transition-all">
           <RotateCcw className="w-3.5 h-3.5" />
         </button>
+        <a
+          href={`/room/${crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10)}`}
+          className="ml-auto p-1.5 rounded-lg text-white/40 hover:bg-white/[0.04] transition-all"
+          title="Create live room"
+        >
+          <Users className="w-3.5 h-3.5" />
+        </a>
       </div>
 
       {/* Main content */}
       <div className="relative z-10 flex-1 flex flex-col lg:flex-row gap-3 sm:gap-4 p-3 sm:p-4 min-h-0 max-w-7xl mx-auto w-full">
         {/* Editor panel - 70% */}
         <div className="flex-1 flex flex-col min-h-0 premium-glass-card rounded-[28px] overflow-hidden border-shine">
+          <div className="corner-reflection" />
           {/* Editor header: macOS dots + filename pill + language badge */}
           <div className="flex items-center gap-3 px-5 py-3 border-b border-white/[0.06] bg-white/[0.02] shrink-0">
             <div className="flex gap-1.5">
@@ -307,7 +315,9 @@ export default function CompilerPage() {
               <Editor language={language} code={code} onChange={setCode} />
             </div>
             {/* Mirror shine overlay */}
-            <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/[0.08] to-transparent pointer-events-none z-10" />
+            <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/[0.10] to-transparent pointer-events-none z-10" />
+            {/* Glow effect on editor edges */}
+            <div className="absolute -inset-[1px] rounded-[28px] opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none z-0 bg-gradient-to-b from-white/[0.03] to-transparent" />
           </div>
 
           {/* Editor status bar */}
@@ -330,12 +340,14 @@ export default function CompilerPage() {
           {/* Input card */}
           {showInput && (
             <div className="flex-shrink-0 premium-glass-card rounded-[28px] overflow-hidden border-shine" style={{ minHeight: '140px', maxHeight: '260px' }}>
+              <div className="corner-reflection" />
               <InputPanel value={input} onChange={setInput} />
             </div>
           )}
 
           {/* Output card */}
           <div className={`${showInput ? 'flex-1' : 'flex-1'} premium-glass-card rounded-[28px] overflow-hidden border-shine`}>
+            <div className="corner-reflection" />
             <OutputPanel output={output} error={error} loading={loading} stats={stats} onCopy={handleCopyOutput} />
           </div>
         </div>

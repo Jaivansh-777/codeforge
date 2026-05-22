@@ -5,11 +5,12 @@ import { ArrowRight, Zap, Shield, Code2, Cloud, Sparkles, Terminal } from 'lucid
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import Navbar from '@/components/Navbar';
+import Footer from '@/components/Footer';
 
 const SplineRobot = dynamic(() => import('@/components/SplineRobot'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full min-h-[400px] lg:min-h-[520px] flex items-center justify-center">
+    <div className="w-full h-full min-h-[350px] lg:min-h-[450px] flex items-center justify-center">
       <div className="flex flex-col items-center gap-3">
         <div className="w-12 h-12 rounded-xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center">
           <svg className="w-5 h-5 text-white/30 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -23,16 +24,16 @@ const SplineRobot = dynamic(() => import('@/components/SplineRobot'), {
 });
 
 const fadeUp = {
-  initial: { opacity: 0, y: 24 },
+  initial: { opacity: 0, y: 20 },
   whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true },
-  transition: { duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] },
+  viewport: { once: true, margin: '-50px' },
+  transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
 };
 
 const stagger = {
   initial: { opacity: 0 },
   whileInView: { opacity: 1 },
-  viewport: { once: true },
+  viewport: { once: true, margin: '-50px' },
   transition: { staggerChildren: 0.08 },
 };
 
@@ -49,7 +50,7 @@ const features = [
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/[0.06] text-xs text-white/40 hover:text-white/70 hover:border-white/[0.15] transition-all cursor-default">
+    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/[0.06] text-xs text-white/40 hover:text-white/70 hover:border-white/[0.15] hover:bg-white/[0.03] transition-all duration-300 cursor-default">
       {children}
     </span>
   );
@@ -57,41 +58,75 @@ function Pill({ children }: { children: React.ReactNode }) {
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#050505] text-white overflow-hidden">
-      {/* Particle stars */}
+    <div className="min-h-screen bg-[#050505] text-white overflow-x-hidden">
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        {Array.from({ length: 60 }).map((_, i) => (
+        {Array.from({ length: 80 }).map((_, i) => (
           <div
             key={i}
             className="absolute w-[1px] h-[1px] bg-white/60 rounded-full"
             style={{
               left: `${Math.random() * 100}%`,
               top: `${Math.random() * 100}%`,
-              opacity: 0.2 + Math.random() * 0.6,
-              animation: `twinkle ${2 + Math.random() * 4}s ease-in-out infinite`,
-              animationDelay: `${Math.random() * 4}s`,
+              opacity: 0.15 + Math.random() * 0.6,
+              animation: `twinkle ${2 + Math.random() * 5}s ease-in-out infinite`,
+              animationDelay: `${Math.random() * 5}s`,
             }}
           />
         ))}
       </div>
+      <div className="cyber-scanlines" />
+      <div className="cyber-grid" />
+      <div className="corner-accent corner-accent-tl" />
+      <div className="corner-accent corner-accent-tr" />
+      <div className="corner-accent corner-accent-bl" />
+      <div className="corner-accent corner-accent-br" />
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div
+          key={`gh-${i}`}
+          className="glow-line-h"
+          style={{ top: `${15 + i * 18}%`, animationDelay: `${i * 2}s`, animationDuration: `${8 + i * 2}s` }}
+        />
+      ))}
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={`gv-${i}`}
+          className="glow-line-v"
+          style={{ left: `${20 + i * 30}%`, animationDelay: `${i * 3}s`, animationDuration: `${10 + i * 3}s` }}
+        />
+      ))}
+      {Array.from({ length: 20 }).map((_, i) => (
+        <div
+          key={`cp-${i}`}
+          className="cyber-particle"
+          style={{
+            left: `${Math.random() * 100}%`,
+            top: `${60 + Math.random() * 40}%`,
+            animationDelay: `${Math.random() * 12}s`,
+            animationDuration: `${10 + Math.random() * 10}s`,
+            width: `${1 + Math.random() * 2}px`,
+            height: `${1 + Math.random() * 2}px`,
+          }}
+        />
+      ))}
 
       <Navbar />
 
       <main className="relative z-10">
         {/* Hero */}
-        <section className="relative pt-28 pb-16 sm:pt-36 sm:pb-20 overflow-hidden min-h-[700px] lg:min-h-[850px] flex items-center">
+        <section className="relative pt-24 pb-16 sm:pt-32 sm:pb-20 overflow-hidden min-h-[650px] lg:min-h-[800px] flex items-center">
           <div className="absolute inset-0 bg-grid opacity-30" />
-          <div className="absolute top-1/3 right-1/4 w-[500px] h-[500px] bg-white/[0.015] rounded-full blur-[150px]" />
+          <div className="absolute top-1/3 right-1/4 w-[600px] h-[600px] bg-white/[0.015] rounded-full blur-[150px]" />
+          <div className="absolute bottom-1/4 left-1/3 w-[400px] h-[400px] bg-white/[0.01] rounded-full blur-[120px]" />
 
           <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid lg:grid-cols-2 gap-6 lg:gap-8 items-center">
+            <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
 
               {/* Left text */}
               <motion.div
                 initial={{ opacity: 0, x: -30 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.7, ease: [0.25, 0.46, 0.45, 0.94] }}
-                className="text-center lg:text-left max-w-xl lg:max-w-2xl"
+                className="text-center lg:text-left max-w-xl lg:max-w-2xl mx-auto lg:mx-0"
               >
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
@@ -103,7 +138,7 @@ export default function LandingPage() {
                   Production-ready online compiler
                 </motion.div>
 
-                <h1 className="text-[clamp(2.2rem,7vw,4.5rem)] font-bold tracking-tight leading-[1.08] mb-5">
+                <h1 className="text-[clamp(2rem,6.5vw,4.2rem)] font-bold tracking-tight leading-[1.08] mb-5">
                   <span className="text-white">Run code in </span>
                   <span className="text-white">any language</span>
                   <br />
@@ -117,7 +152,7 @@ export default function LandingPage() {
                 <div className="flex flex-col sm:flex-row items-center lg:justify-start justify-center gap-3">
                   <Link
                     href="/compiler"
-                    className="group inline-flex items-center gap-2 px-5 py-2.5 bg-white text-black text-sm font-semibold rounded-xl hover:bg-white/90 transition-all duration-200 active:scale-[0.97] shadow-lg shadow-white/10"
+                    className="group relative inline-flex items-center gap-2 px-5 py-2.5 bg-white text-black text-sm font-semibold rounded-xl hover:bg-white/90 transition-all duration-300 active:scale-[0.97] shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/15 overflow-hidden"
                   >
                     <Zap className="w-3.5 h-3.5" />
                     Open Compiler
@@ -125,10 +160,10 @@ export default function LandingPage() {
                   </Link>
                   <a
                     href="#features"
-                    className="inline-flex items-center gap-2 px-5 py-2.5 border border-white/[0.1] hover:border-white/[0.2] text-white/60 hover:text-white/90 text-sm font-medium rounded-xl transition-all duration-200"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 border border-white/[0.1] hover:border-white/[0.25] text-white/60 hover:text-white/90 text-sm font-medium rounded-xl transition-all duration-300 hover:bg-white/[0.03]"
                   >
                     Explore Features
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    <ArrowRight className="w-3.5 h-3.5 transition-transform duration-300 group-hover:translate-x-0.5" />
                   </a>
                 </div>
 
@@ -149,17 +184,14 @@ export default function LandingPage() {
                 initial={{ opacity: 0, scale: 0.92 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.8, delay: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
-                className="relative flex items-center justify-center lg:justify-end lg:-mr-20"
+                className="relative flex items-center justify-center lg:justify-end lg:-mr-16"
               >
-                <div className="relative w-full max-w-[90vw] sm:max-w-[520px] lg:max-w-[650px] xl:max-w-[750px] aspect-square">
-                  {/* Soft white/grey radial glow */}
+                <div className="relative w-full max-w-[85vw] sm:max-w-[480px] lg:max-w-[600px] xl:max-w-[680px] aspect-square">
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-[500px] h-[500px] rounded-full bg-white/[0.04] blur-[140px]" />
-                    <div className="absolute w-[350px] h-[350px] rounded-full bg-white/[0.025] blur-[100px]" />
+                    <div className="w-[450px] h-[450px] rounded-full bg-white/[0.04] blur-[140px]" />
+                    <div className="absolute w-[300px] h-[300px] rounded-full bg-white/[0.025] blur-[100px]" />
                   </div>
-
-                  {/* Robot */}
-                  <div className="relative w-full h-full animate-float-slow z-10" style={{ minHeight: '450px', maxHeight: '750px' }}>
+                  <div className="relative w-full h-full animate-float-slow z-10" style={{ minHeight: '380px', maxHeight: '650px' }}>
                     <SplineRobot />
                   </div>
                 </div>
@@ -181,21 +213,24 @@ export default function LandingPage() {
               </p>
             </motion.div>
 
-            <motion.div {...stagger} className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <motion.div {...stagger} className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
               {features.map(f => (
                 <motion.div
                   key={f.title}
                   variants={{
-                    initial: { opacity: 0, y: 16 },
+                    initial: { opacity: 0, y: 20 },
                     whileInView: { opacity: 1, y: 0 },
                   }}
-                  className="mirror-glass rounded-xl p-5 hover:bg-white/[0.04] transition-all duration-300 group mirror-shine"
+                  className="mirror-glass rounded-xl p-5 hover:bg-white/[0.05] transition-all duration-500 group mirror-shine relative overflow-hidden"
                 >
-                  <div className="w-9 h-9 rounded-lg bg-white/[0.04] border border-white/[0.04] flex items-center justify-center mb-3 group-hover:bg-white/[0.06] transition-colors">
-                    <f.icon className="w-4 h-4 text-white/60" />
+                  <div className="absolute -inset-1 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none">
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent rounded-xl" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white/80 mb-1.5">{f.title}</h3>
-                  <p className="text-xs text-white/40 leading-relaxed">{f.desc}</p>
+                  <div className="w-9 h-9 rounded-lg bg-white/[0.04] border border-white/[0.04] flex items-center justify-center mb-3 group-hover:bg-white/[0.08] group-hover:border-white/[0.1] transition-all duration-300">
+                    <f.icon className="w-4 h-4 text-white/60 group-hover:text-white/80 transition-colors duration-300" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-white/80 mb-1.5 group-hover:text-white/95 transition-colors duration-300">{f.title}</h3>
+                  <p className="text-xs text-white/40 leading-relaxed group-hover:text-white/50 transition-colors duration-300">{f.desc}</p>
                 </motion.div>
               ))}
             </motion.div>
@@ -203,15 +238,17 @@ export default function LandingPage() {
         </section>
 
         {/* CTA */}
-        <section className="pb-20 sm:pb-28">
+        <section className="pb-24 sm:pb-32">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <motion.div
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              className="relative overflow-hidden rounded-2xl border border-white/[0.05] bg-white/[0.02] p-8 sm:p-12 text-center"
+              viewport={{ once: true, margin: '-80px' }}
+              transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="relative overflow-hidden rounded-2xl border border-white/[0.05] bg-white/[0.02] p-8 sm:p-14 text-center"
             >
               <div className="absolute inset-0 bg-grid opacity-20" />
+              <div className="absolute inset-0 bg-gradient-to-b from-white/[0.02] to-transparent" />
               <div className="relative">
                 <h2 className="text-xl sm:text-2xl font-bold text-white/90 mb-3">Ready to start coding?</h2>
                 <p className="text-sm text-white/40 max-w-md mx-auto mb-6">
@@ -219,10 +256,11 @@ export default function LandingPage() {
                 </p>
                 <Link
                   href="/compiler"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-black text-sm font-semibold rounded-xl hover:bg-white/90 transition-all active:scale-[0.97] shadow-lg shadow-white/10"
+                  className="group inline-flex items-center gap-2 px-5 py-2.5 bg-white text-black text-sm font-semibold rounded-xl hover:bg-white/90 transition-all duration-300 active:scale-[0.97] shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/15"
                 >
                   <Terminal className="w-3.5 h-3.5" />
                   Open Compiler
+                  <ArrowRight className="w-3.5 h-3.5 transition-transform duration-300 group-hover:translate-x-0.5" />
                 </Link>
               </div>
             </motion.div>
@@ -230,16 +268,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-white/[0.03] py-8">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-white/30" />
-            <span className="text-sm font-semibold text-white/30">CodeForge</span>
-          </div>
-          <p className="text-xs text-white/20">&copy; {new Date().getFullYear()} CodeForge. All rights reserved.</p>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

@@ -272,6 +272,8 @@ function RoomContent() {
         <div className="absolute top-1/3 right-1/4 w-[600px] h-[600px] bg-white/[0.015] rounded-full blur-[150px]" />
         <div className="absolute bottom-1/4 left-1/5 w-[400px] h-[400px] bg-white/[0.01] rounded-full blur-[120px]" />
       </div>
+      <div className="cyber-scanlines" />
+      <div className="cyber-grid" />
 
       <Toaster
         position="bottom-right"

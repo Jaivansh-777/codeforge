@@ -457,7 +457,7 @@ export default function Whiteboard({ socket, roomId }: Props) {
   return (
     <div className="flex flex-col h-full premium-glass-card rounded-[28px] overflow-hidden border-shine">
       {/* Toolbar */}
-      <div className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 border-b border-white/[0.06] bg-white/[0.02] shrink-0 overflow-x-auto">
+      <div className="flex items-center gap-1 px-2 sm:gap-2 sm:px-4 py-2 border-b border-white/[0.06] bg-white/[0.02] shrink-0 overflow-x-auto scrollbar-none">
         {/* Tools */}
         <div className="flex items-center gap-0.5 sm:gap-1 mr-1 sm:mr-2">
           {TOOLS.map(t => {
@@ -466,10 +466,10 @@ export default function Whiteboard({ socket, roomId }: Props) {
               <button
                 key={t.id}
                 onClick={() => { setTool(t.id); setShowColorPicker(false); setShowStrokePicker(false); }}
-                className={`p-1.5 sm:p-2 rounded-lg transition-all ${
+                className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 ${
                   tool === t.id
                     ? 'bg-white/15 text-white border border-white/[0.12] shadow-sm'
-                    : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]'
+                    : 'text-white/40 hover:text-white/70 hover:bg-white/[0.06]'
                 }`}
                 title={t.label}
               >
@@ -479,13 +479,13 @@ export default function Whiteboard({ socket, roomId }: Props) {
           })}
         </div>
 
-        <div className="w-px h-5 bg-white/[0.08]" />
+        <div className="w-px h-5 bg-white/[0.08] shrink-0" />
 
         {/* Color picker */}
         <div className="relative">
           <button
             onClick={() => { setShowColorPicker(!showColorPicker); setShowStrokePicker(false); }}
-            className="p-1.5 sm:p-2 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[0.04] transition-all"
+            className="p-1.5 sm:p-2 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[0.06] transition-all duration-200"
             title="Color"
           >
             <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full border border-white/20" style={{ backgroundColor: color }} />
@@ -521,7 +521,7 @@ export default function Whiteboard({ socket, roomId }: Props) {
         <div className="relative">
           <button
             onClick={() => { setShowStrokePicker(!showStrokePicker); setShowColorPicker(false); }}
-            className="p-1.5 sm:p-2 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[0.04] transition-all text-[10px] sm:text-xs font-mono min-w-[24px]"
+            className="p-1.5 sm:p-2 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[0.06] transition-all duration-200 text-[10px] sm:text-xs font-mono min-w-[24px]"
             title="Stroke size"
           >
             {strokeSize}px
@@ -533,7 +533,7 @@ export default function Whiteboard({ socket, roomId }: Props) {
                   key={s}
                   onClick={() => { setStrokeSize(s); setShowStrokePicker(false); }}
                   className={`flex items-center gap-3 w-full px-2 py-1.5 rounded-lg text-xs transition-all ${
-                    s === strokeSize ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/[0.04] hover:text-white/70'
+                    s === strokeSize ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/[0.06] hover:text-white/70'
                   }`}
                 >
                   <div className="w-6 flex items-center justify-center">
@@ -546,12 +546,12 @@ export default function Whiteboard({ socket, roomId }: Props) {
           )}
         </div>
 
-        <div className="w-px h-5 bg-white/[0.08]" />
+        <div className="w-px h-5 bg-white/[0.08] shrink-0" />
 
         {/* Clear */}
         <button
           onClick={handleClear}
-          className="p-1.5 sm:p-2 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all"
+          className="p-1.5 sm:p-2 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
           title="Clear board"
         >
           <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -560,11 +560,17 @@ export default function Whiteboard({ socket, roomId }: Props) {
         {/* Download */}
         <button
           onClick={handleDownload}
-          className="p-1.5 sm:p-2 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[0.04] transition-all"
+          className="p-1.5 sm:p-2 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[0.06] transition-all duration-200"
           title="Download PNG"
         >
           <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </button>
+
+        {/* Tool indicator */}
+        <div className="ml-auto hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.06] text-[9px] text-white/30 font-mono">
+          <Pencil className="w-2 h-2" />
+          <span className="capitalize">{tool}</span>
+        </div>
       </div>
 
       {/* Canvas area */}

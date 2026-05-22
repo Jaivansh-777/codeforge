@@ -525,11 +525,32 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
       {/* Control dock */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)] pointer-events-auto">
-        <button onClick={toggleMic} className={`p-2.5 rounded-xl transition-all ${micMuted ? 'bg-red-500/15 text-red-400' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`} title={micMuted ? 'Unmute mic' : 'Mute mic'}>
-          {micMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+        <button
+          onClick={toggleMic}
+          className={`p-2.5 rounded-xl transition-all duration-200 active:scale-90 ${
+            micMuted
+              ? 'bg-red-500/15 text-red-400 hover:bg-red-500/25'
+              : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'
+          }`}
+          title={micMuted ? 'Unmute mic' : 'Mute mic'}
+        >
+          <div className="relative">
+            {micMuted ? (
+              <MicOff className="w-4 h-4" />
+            ) : (
+              <Mic className="w-4 h-4 animate-[fadeIn_0.2s_ease-out]" />
+            )}
+            {!micMuted && speaking && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            )}
+          </div>
         </button>
         <div className="w-px h-6 bg-white/[0.08] mx-1" />
-        <button onClick={leaveAudio} className="p-2.5 rounded-xl bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all" title="Leave audio">
+        <button
+          onClick={leaveAudio}
+          className="p-2.5 rounded-xl bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all duration-200 active:scale-90"
+          title="Leave audio"
+        >
           <PhoneOff className="w-4 h-4" />
         </button>
       </div>
