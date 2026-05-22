@@ -24,12 +24,6 @@ const STUN_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    // TURN server placeholder for production:
-    // {
-    //   urls: 'turn:your-turn-server.com:3478',
-    //   username: 'your-username',
-    //   credential: 'your-credential',
-    // },
   ],
 };
 
@@ -42,6 +36,18 @@ interface RemoteMediaState {
   video: boolean;
   screen: boolean;
 }
+
+const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 1280 },
+  height: { ideal: 720 },
+  frameRate: { ideal: 30 },
+};
+
+const SCREEN_CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 1920 },
+  height: { ideal: 1080 },
+  frameRate: { ideal: 30 },
+};
 
 function log(...args: any[]) {
   console.log('[WebRTC]', ...args);
@@ -127,7 +133,17 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     setSpeaking(false);
   }, []);
 
-  // --- Core: replace or remove video track on all peer connections ---
+  // --- Set per-sender bitrate for quality ---
+  function setVideoBitrate(pc: RTCPeerConnection, bps: number) {
+    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+    if (!sender) return;
+    const params = sender.getParameters();
+    if (!params.encodings) params.encodings = [{}];
+    params.encodings[0].maxBitrate = bps;
+    sender.setParameters(params).catch(() => {});
+  }
+
+  // --- Replace video track on all peer connections via replaceTrack (no renegotiation needed) ---
   function broadcastVideoTrack(track: MediaStreamTrack | null) {
     const stream = localStreamRef.current;
     if (!stream) return;
@@ -138,12 +154,24 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         if (sender) {
           sender.replaceTrack(track).catch(() => {});
         } else {
-          peer.connection.addTrack(track, stream);
+          pcAddTrack(peer.connection, track, stream);
         }
-      } else if (sender) {
-        try { peer.connection.removeTrack(sender); } catch {}
+        setVideoBitrate(peer.connection, screenSharing ? 4000000 : 1500000);
+      } else {
+        if (sender) {
+          try { peer.connection.removeTrack(sender); } catch {}
+        }
       }
     });
+  }
+
+  function pcAddTrack(pc: RTCPeerConnection, track: MediaStreamTrack, stream: MediaStream) {
+    const existing = pc.getSenders().find(s => s.track?.kind === 'video');
+    if (existing) {
+      existing.replaceTrack(track).catch(() => {});
+    } else {
+      pc.addTrack(track, stream);
+    }
   }
 
   // --- Add local audio/video tracks to a PC (avoid duplicates) ---
@@ -254,6 +282,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       remoteAudioRefs.current.delete(targetId);
     }
     remoteStreamsRef.current.delete(targetId);
+    remoteMediaStatesRef.current.delete(targetId);
     if (screenShareByRef.current === targetId) {
       setScreenShareBy(null);
       setScreenShareName('');
@@ -293,48 +322,58 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     }
   }
 
-  // --- Toggle camera ---
+  // --- Toggle camera (enable/disable the ONE existing video track, never addTrack/removeTrack) ---
   const toggleCamera = useCallback(async () => {
     if (screenSharing) return;
     setError('');
 
     const wasOff = cameraOff;
-    setCameraOff(!wasOff);
+    const tracks = localStreamRef.current?.getVideoTracks();
+    const track = tracks?.[0];
 
-    if (!localStreamRef.current) return;
-
-    if (wasOff) {
-      try {
-        const camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        const videoTrack = camStream.getVideoTracks()[0];
-        localStreamRef.current.addTrack(videoTrack);
-        broadcastVideoTrack(videoTrack);
-
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = localStreamRef.current;
+    if (!track) {
+      if (wasOff) {
+        try {
+          const camStream = await navigator.mediaDevices.getUserMedia({
+            video: VIDEO_CONSTRAINTS,
+            audio: false,
+          });
+          const newTrack = camStream.getVideoTracks()[0];
+          localStreamRef.current?.addTrack(newTrack);
+          broadcastVideoTrack(newTrack);
+        } catch (e: any) {
+          setCameraOff(true);
+          setError('Camera access denied');
+          doForceUpdate();
+          if (socketRef.current) {
+            socketRef.current.emit('media-state', {
+              enabled: { audio: !micMuted, video: false, screen: false },
+            });
+          }
+          return;
         }
-      } catch (e: any) {
-        setCameraOff(true);
-        setError('Camera access denied');
-        return;
       }
-    } else {
-      const videoTracks = localStreamRef.current.getVideoTracks();
-      videoTracks.forEach(t => {
-        localStreamRef.current?.removeTrack(t);
-        t.stop();
-      });
-      broadcastVideoTrack(null);
+      setCameraOff(false);
+      doForceUpdate();
+      if (socketRef.current) {
+        socketRef.current.emit('media-state', {
+          enabled: { audio: !micMuted, video: true, screen: false },
+        });
+      }
+      return;
+    }
 
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
-      }
+    track.enabled = wasOff;
+    if (wasOff) {
+      setCameraOff(false);
+    } else {
+      setCameraOff(true);
     }
     doForceUpdate();
 
     if (socketRef.current) {
       socketRef.current.emit('media-state', {
-        enabled: { audio: !micMuted, video: !wasOff, screen: false },
+        enabled: { audio: !micMuted, video: wasOff, screen: false },
       });
     }
   }, [cameraOff, micMuted, screenSharing]);
@@ -345,7 +384,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     setError('');
     try {
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
+        video: SCREEN_CONSTRAINTS,
         audio: true,
       });
 
@@ -353,23 +392,17 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       videoTrack.onended = () => { stopScreenShare(); };
 
       screenStreamRef.current = displayStream;
-
       wasCameraOnRef.current = !cameraOff;
 
       const localStream = localStreamRef.current;
       if (localStream) {
-        const oldVideoTracks = localStream.getVideoTracks();
-        oldVideoTracks.forEach(t => {
+        const oldTracks = localStream.getVideoTracks();
+        oldTracks.forEach(t => {
           localStream.removeTrack(t);
           t.stop();
         });
         localStream.addTrack(videoTrack);
-      }
-
-      broadcastVideoTrack(videoTrack);
-
-      if (localVideoRef.current && localStreamRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
+        broadcastVideoTrack(videoTrack);
       }
 
       setScreenSharing(true);
@@ -395,7 +428,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   }, [cameraOff, micMuted]);
 
   // --- Stop screen share ---
-  const stopScreenShare = useCallback(() => {
+  const stopScreenShare = useCallback(async () => {
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach(t => t.stop());
       screenStreamRef.current = null;
@@ -410,29 +443,46 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       });
 
       if (wasCameraOnRef.current) {
-        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-          .then(camStream => {
-            const camTrack = camStream.getVideoTracks()[0];
-            localStream.addTrack(camTrack);
-            broadcastVideoTrack(camTrack);
-            if (localVideoRef.current) {
-              localVideoRef.current.srcObject = localStream;
-            }
-            doForceUpdate();
-          })
-          .catch(() => {
-            broadcastVideoTrack(null);
-            if (localVideoRef.current) {
-              localVideoRef.current.srcObject = localStream;
-            }
-            doForceUpdate();
+        try {
+          const camStream = await navigator.mediaDevices.getUserMedia({
+            video: VIDEO_CONSTRAINTS,
+            audio: false,
           });
-      } else {
-        broadcastVideoTrack(null);
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = localStream;
+          const camTrack = camStream.getVideoTracks()[0];
+          localStream.addTrack(camTrack);
+          broadcastVideoTrack(camTrack);
+        } catch {
+          try {
+            const fallback = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } },
+              audio: false,
+            });
+            const fbTrack = fallback.getVideoTracks()[0];
+            fbTrack.enabled = false;
+            localStream.addTrack(fbTrack);
+            broadcastVideoTrack(fbTrack);
+            wasCameraOnRef.current = false;
+          } catch {
+            broadcastVideoTrack(null);
+          }
         }
-        doForceUpdate();
+      } else {
+        try {
+          const fallback = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 5 } },
+            audio: false,
+          });
+          const fbTrack = fallback.getVideoTracks()[0];
+          fbTrack.enabled = false;
+          localStream.addTrack(fbTrack);
+          broadcastVideoTrack(fbTrack);
+        } catch {
+          broadcastVideoTrack(null);
+        }
+      }
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localStream;
       }
     }
 
@@ -440,12 +490,13 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     if (!wasCameraOnRef.current) {
       setCameraOff(true);
     }
+    doForceUpdate();
 
     if (socketRef.current) {
       socketRef.current.emit('media-state', {
         enabled: {
           audio: !micMuted,
-          video: wasCameraOnRef.current ? true : false,
+          video: wasCameraOnRef.current,
           screen: false,
         },
       });
@@ -501,7 +552,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     return () => { socket.off('signal', handleSignal); };
   }, [socket]);
 
-  // --- Media state handler (tracks remote video/screen states) ---
+  // --- Media state handler ---
   useEffect(() => {
     if (!socket) return;
 
@@ -537,7 +588,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     };
   }, []);
 
-  // --- Cleanup helper ---
   function cleanupAll() {
     Array.from(peersRef.current.keys()).forEach(id => {
       removePeer(id);
@@ -573,12 +623,13 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: true,
+        video: VIDEO_CONSTRAINTS,
       });
 
       localStreamRef.current = stream;
       stream.getAudioTracks().forEach(t => (t.enabled = false));
-      stream.getVideoTracks().forEach(t => (t.enabled = false));
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) videoTrack.enabled = false;
       setMicMuted(true);
       setCameraOff(true);
       setMediaActive(true);
@@ -720,7 +771,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     );
   }
 
-  // Minimized bubble
   if (minimized) {
     return (
       <button
@@ -788,14 +838,14 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
                 className="w-full h-full object-contain bg-black/60"
               />
               <div className="absolute bottom-0 left-0 right-0 z-20 px-4 py-2 bg-gradient-to-t from-black/60 to-transparent">
-                <span className="text-[10px] text-white/40 font-mono">Live • Shared screen</span>
+                <span className="text-[10px] text-white/40 font-mono">Live &bull; Shared screen</span>
               </div>
             </div>
           </div>
         );
       })()}
 
-      {/* Screen Share minimized indicator (when panel hidden) */}
+      {/* Screen Share minimized indicator */}
       {screenShareBy && !showScreenPanel && (
         <button
           onClick={() => setShowScreenPanel(true)}
@@ -817,7 +867,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         }}
       >
         <div className="w-[180px] sm:w-[220px] premium-glass-card rounded-xl overflow-hidden border-shine shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
-          {/* Header drag handle */}
           <div
             onMouseDown={handleMouseDown}
             className="flex items-center justify-between px-2.5 py-1.5 bg-white/[0.03] border-b border-white/[0.06] cursor-grab active:cursor-grabbing pointer-events-auto"
@@ -865,14 +914,12 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
                 </div>
               )}
 
-              {/* Speaking ring */}
               {speaking && (
                 <div className="absolute inset-0 pointer-events-none">
                   <div className="absolute inset-1 rounded-lg border border-emerald-400/20 animate-ping" />
                 </div>
               )}
 
-              {/* Label overlay */}
               <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1">
@@ -937,7 +984,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
       {/* Control dock */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)] pointer-events-auto">
-        {/* Mic toggle */}
         <button
           onClick={toggleMic}
           className={`p-2.5 rounded-xl transition-all duration-200 active:scale-90 ${
@@ -955,7 +1001,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
           </div>
         </button>
 
-        {/* Camera toggle */}
         <button
           onClick={toggleCamera}
           disabled={screenSharing}
@@ -973,7 +1018,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
         <div className="w-px h-6 bg-white/[0.08] mx-1" />
 
-        {/* Screen share toggle */}
         <button
           onClick={screenSharing ? stopScreenShare : startScreenShare}
           disabled={loading}
@@ -995,7 +1039,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
         <div className="w-px h-6 bg-white/[0.08] mx-1" />
 
-        {/* Leave call */}
         <button
           onClick={leaveCall}
           className="p-2.5 rounded-xl bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all duration-200 active:scale-90"
