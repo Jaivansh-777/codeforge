@@ -133,9 +133,20 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     setSpeaking(false);
   }, []);
 
+  // --- Find video sender by transceiver receiver track kind ---
+  function getVideoSender(pc: RTCPeerConnection): RTCRtpSender | null {
+    const transceiver = pc.getTransceivers().find(t => t.receiver?.track?.kind === 'video');
+    return transceiver?.sender || null;
+  }
+
+  function getAudioSender(pc: RTCPeerConnection): RTCRtpSender | null {
+    const transceiver = pc.getTransceivers().find(t => t.receiver?.track?.kind === 'audio');
+    return transceiver?.sender || null;
+  }
+
   // --- Set per-sender bitrate for quality ---
   function setVideoBitrate(pc: RTCPeerConnection, bps: number) {
-    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+    const sender = getVideoSender(pc);
     if (!sender) return;
     const params = sender.getParameters();
     if (!params.encodings) params.encodings = [{}];
@@ -143,35 +154,21 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     sender.setParameters(params).catch(() => {});
   }
 
-  // --- Replace video track on all peer connections via replaceTrack (no renegotiation needed) ---
+  // --- Replace video track on all peer connections via replaceTrack (never addTrack/removeTrack) ---
   function broadcastVideoTrack(track: MediaStreamTrack | null) {
-    const stream = localStreamRef.current;
-    if (!stream) return;
-
     peersRef.current.forEach((peer) => {
-      const sender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
+      const sender = getVideoSender(peer.connection);
       if (track) {
         if (sender) {
           sender.replaceTrack(track).catch(() => {});
         } else {
-          pcAddTrack(peer.connection, track, stream);
+          peer.connection.addTrack(track, localStreamRef.current!);
         }
         setVideoBitrate(peer.connection, screenSharing ? 4000000 : 1500000);
-      } else {
-        if (sender) {
-          try { peer.connection.removeTrack(sender); } catch {}
-        }
+      } else if (sender) {
+        try { peer.connection.removeTrack(sender); } catch {}
       }
     });
-  }
-
-  function pcAddTrack(pc: RTCPeerConnection, track: MediaStreamTrack, stream: MediaStream) {
-    const existing = pc.getSenders().find(s => s.track?.kind === 'video');
-    if (existing) {
-      existing.replaceTrack(track).catch(() => {});
-    } else {
-      pc.addTrack(track, stream);
-    }
   }
 
   // --- Add local audio/video tracks to a PC (avoid duplicates) ---
@@ -181,7 +178,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
     const audioTrack = stream.getAudioTracks()[0];
     if (audioTrack) {
-      const existing = pc.getSenders().find(s => s.track?.kind === 'audio');
+      const existing = getAudioSender(pc);
       if (!existing) {
         pc.addTrack(audioTrack, stream);
       }
@@ -189,9 +186,27 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
     const videoTrack = stream.getVideoTracks()[0];
     if (videoTrack) {
-      const existing = pc.getSenders().find(s => s.track?.kind === 'video');
+      const existing = getVideoSender(pc);
       if (!existing) {
         pc.addTrack(videoTrack, stream);
+      }
+    }
+  }
+
+  async function renegotiateAll() {
+    for (const [targetId, peer] of Array.from(peersRef.current.entries())) {
+      const pc = peer.connection;
+      try {
+        if (pc.signalingState !== 'stable') continue;
+        const offer = await pc.createOffer();
+        if (pc.signalingState !== 'stable') continue;
+        await pc.setLocalDescription(offer);
+        socketRef.current?.emit('signal', {
+          to: targetId,
+          signal: { type: 'offer', sdp: pc.localDescription },
+        });
+      } catch (e) {
+        console.error('[WebRTC] renegotiate error:', e);
       }
     }
   }
@@ -379,6 +394,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     }
 
     track.enabled = wasOff;
+    broadcastVideoTrack(track);
     if (wasOff) {
       setCameraOff(false);
     } else {
@@ -412,12 +428,13 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       const localStream = localStreamRef.current;
       if (localStream) {
         const oldTracks = localStream.getVideoTracks();
+        localStream.addTrack(videoTrack);
+        // Replace on senders BEFORE stopping old tracks (sender.track must be non-null)
+        broadcastVideoTrack(videoTrack);
         oldTracks.forEach(t => {
           localStream.removeTrack(t);
           t.stop();
         });
-        localStream.addTrack(videoTrack);
-        broadcastVideoTrack(videoTrack);
       }
 
       setScreenSharing(true);
@@ -444,61 +461,64 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
   // --- Stop screen share ---
   const stopScreenShare = useCallback(async () => {
+    const localStream = localStreamRef.current;
+
+    const oldTracks = localStream?.getVideoTracks() || [];
+
+    if (wasCameraOnRef.current) {
+      try {
+        const camStream = await navigator.mediaDevices.getUserMedia({
+          video: VIDEO_CONSTRAINTS,
+          audio: false,
+        });
+        const camTrack = camStream.getVideoTracks()[0];
+        localStream?.addTrack(camTrack);
+        // Replace on senders BEFORE stopping old screen track
+        broadcastVideoTrack(camTrack);
+      } catch {
+        try {
+          const fallback = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } },
+            audio: false,
+          });
+          const fbTrack = fallback.getVideoTracks()[0];
+          fbTrack.enabled = false;
+          localStream?.addTrack(fbTrack);
+          broadcastVideoTrack(fbTrack);
+          wasCameraOnRef.current = false;
+        } catch {
+          broadcastVideoTrack(null);
+          wasCameraOnRef.current = false;
+        }
+      }
+    } else {
+      try {
+        const fallback = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 5 } },
+          audio: false,
+        });
+        const fbTrack = fallback.getVideoTracks()[0];
+        fbTrack.enabled = false;
+        localStream?.addTrack(fbTrack);
+        broadcastVideoTrack(fbTrack);
+      } catch {
+        broadcastVideoTrack(null);
+      }
+    }
+
+    // Now safe to stop old tracks (screen track) since broadcastVideoTrack already ran
+    oldTracks.forEach(t => {
+      localStream?.removeTrack(t);
+      t.stop();
+    });
+
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach(t => t.stop());
       screenStreamRef.current = null;
     }
 
-    const localStream = localStreamRef.current;
-    if (localStream) {
-      const oldTracks = localStream.getVideoTracks();
-      oldTracks.forEach(t => {
-        localStream.removeTrack(t);
-        t.stop();
-      });
-
-      if (wasCameraOnRef.current) {
-        try {
-          const camStream = await navigator.mediaDevices.getUserMedia({
-            video: VIDEO_CONSTRAINTS,
-            audio: false,
-          });
-          const camTrack = camStream.getVideoTracks()[0];
-          localStream.addTrack(camTrack);
-          broadcastVideoTrack(camTrack);
-        } catch {
-          try {
-            const fallback = await navigator.mediaDevices.getUserMedia({
-              video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } },
-              audio: false,
-            });
-            const fbTrack = fallback.getVideoTracks()[0];
-            fbTrack.enabled = false;
-            localStream.addTrack(fbTrack);
-            broadcastVideoTrack(fbTrack);
-            wasCameraOnRef.current = false;
-          } catch {
-            broadcastVideoTrack(null);
-          }
-        }
-      } else {
-        try {
-          const fallback = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 5 } },
-            audio: false,
-          });
-          const fbTrack = fallback.getVideoTracks()[0];
-          fbTrack.enabled = false;
-          localStream.addTrack(fbTrack);
-          broadcastVideoTrack(fbTrack);
-        } catch {
-          broadcastVideoTrack(null);
-        }
-      }
-
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = localStream;
-      }
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
     }
 
     setScreenSharing(false);
