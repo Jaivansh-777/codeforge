@@ -65,13 +65,6 @@ const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
 const LOG = (...a: any[]) => console.log('[Call]', ...a);
 let pcId = 0;
 
-function getTransceiver(pc: RTCPeerConnection, kind: 'audio' | 'video') {
-  return pc.getTransceivers().find(t => t.receiver?.track?.kind === kind) ?? null;
-}
-function getSender(pc: RTCPeerConnection, kind: 'audio' | 'video') {
-  return getTransceiver(pc, kind)?.sender ?? null;
-}
-
 /* ================================================================== */
 /*  Speaking Detection                                                */
 /* ================================================================== */
@@ -113,7 +106,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   const [screenFullscreen, setScreenFullscreen] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
 
-  /* ---- Refs (streams stored here, NOT in React state) ---- */
+  /* ---- Refs ---- */
   const sRef = useRef(socket);
   const sidRef = useRef(socketId);
   const partsRef = useRef<Participant[]>([]);
@@ -136,15 +129,57 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
   function refreshRemoteStreams() { setTimeout(() => force(), 0); }
 
-  /* ---- create PC with fixed transceiver order ---- */
+  /* ---- helper: add local tracks to a PC (avoids duplicates) ---- */
+  function addLocalTracksToPC(pc: RTCPeerConnection) {
+    const ls = localStreamRef.current;
+    if (!ls) return;
+    ls.getTracks().forEach(track => {
+      const kind = track.kind;
+      const exists = pc.getSenders().some(s => s.track?.kind === kind);
+      if (!exists) {
+        pc.addTrack(track, ls);
+        LOG('added local track', kind, 'to PC');
+      }
+    });
+  }
+
+  /* ---- helper: remove local tracks of a given kind from a PC ---- */
+  function removeLocalTracksFromPC(pc: RTCPeerConnection, kind: 'audio' | 'video') {
+    pc.getSenders().forEach(s => {
+      if (s.track?.kind === kind) {
+        pc.removeTrack(s);
+        LOG('removed local track', kind, 'from PC');
+      }
+    });
+  }
+
+  /* ---- explicit renegotiation (sends new offer) ---- */
+  async function renegotiate(targetId: string) {
+    const pd = peersRef.current.get(targetId);
+    if (!pd) return;
+    const pc = pd.pc;
+    if (pc.signalingState !== 'stable') return;
+    try {
+      console.log("sending offer to", targetId);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sRef.current?.emit('signal', { to: targetId, signal: { type: 'offer', sdp: pc.localDescription } });
+      console.log("offer sent to", targetId);
+    } catch (e) { console.error('[renegotiate]', e); }
+  }
+
+  async function renegotiateAll() {
+    const ids = Array.from(peersRef.current.keys());
+    for (const id of ids) {
+      await renegotiate(id);
+    }
+  }
+
+  /* ---- create PC (no transceivers; tracks added later) ---- */
   function createPC(targetId: string): PeerData {
     const id = ++pcId;
-    LOG(`[${id}] createPC ${targetId}`);
+    console.log("creating peer", targetId);
     const pc = new RTCPeerConnection(STUN);
-
-    pc.addTransceiver('audio', { direction: 'inactive' });
-    pc.addTransceiver('video', { direction: 'inactive' });
-    LOG(`[${id}] transceivers added (audio, video)`);
 
     pc.onicecandidate = (e) => {
       if (e.candidate && sRef.current) {
@@ -164,8 +199,8 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         audio.play().catch(() => {});
         (audio as any).__peerId = targetId;
       } else {
+        console.log("received remote track from", targetId);
         remoteStreamsRef.current.set(targetId, e.streams[0]);
-        LOG('remote track received', targetId);
         refreshRemoteStreams();
       }
     };
@@ -182,17 +217,17 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     pc.onnegotiationneeded = async () => {
       try {
         if (pc.signalingState !== 'stable') return;
-        LOG(`[${id}] negotiation needed ${targetId}`);
+        console.log("sending offer to", targetId);
         const offer = await pc.createOffer();
         if (pc.signalingState !== 'stable') return;
         await pc.setLocalDescription(offer);
         sRef.current?.emit('signal', { to: targetId, signal: { type: 'offer', sdp: pc.localDescription } });
+        console.log("offer sent to", targetId);
       } catch (e) { console.error('[neg]', e); }
     };
 
     const data: PeerData = { pc };
     peersRef.current.set(targetId, data);
-    LOG(`[${id}] peer created ${targetId}`);
     return data;
   }
 
@@ -223,44 +258,12 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
   function updConnState(_id: string, _st: string) {}
 
-  /* ---- Set local track on all peers via replaceTrack ---- */
-  function setLocalVideoTrack(track: MediaStreamTrack | null, isScreen = false) {
-    LOG('setLocalVideoTrack', track?.id ?? 'null', 'screen=', isScreen);
-    peersRef.current.forEach(({ pc }) => {
-      const sender = getSender(pc, 'video');
-      if (!sender) return;
-      if (track) {
-        sender.replaceTrack(track).catch(() => {});
-        const t = getTransceiver(pc, 'video');
-        if (t) t.direction = 'sendrecv';
-        const p = sender.getParameters();
-        if (!p.encodings) p.encodings = [{}];
-        p.encodings[0].maxBitrate = isScreen ? 4_000_000 : 1_500_000;
-        sender.setParameters(p).catch(() => {});
-      } else {
-        sender.replaceTrack(null).catch(() => {});
-        const t = getTransceiver(pc, 'video');
-        if (t) t.direction = 'inactive';
-      }
-    });
-  }
-
-  function setLocalAudioTrack(enabled: boolean) {
-    peersRef.current.forEach(({ pc }) => {
-      const sender = getSender(pc, 'audio');
-      const str = localStreamRef.current?.getAudioTracks()[0] ?? null;
-      if (!sender) return;
-      sender.replaceTrack(enabled ? str : null).catch(() => {});
-      const t = getTransceiver(pc, 'audio');
-      if (t) t.direction = enabled ? 'sendrecv' : 'inactive';
-    });
-  }
-
-  /* ---- send initial offer ---- */
+  /* ---- send initial offer to a peer ---- */
   async function sendOffer(targetId: string) {
     const pd = ensurePC(targetId);
     if (!pd) return;
     const pc = pd.pc;
+    addLocalTracksToPC(pc);
     try {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -319,7 +322,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   /* ================================================================ */
 
   const joinCall = useCallback(async () => {
-    LOG('camera stream started');
+    console.log("camera stream started");
     setLoading(true); setError(''); setCameraError(null);
     try {
       const audio = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
@@ -340,13 +343,9 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       st.getAudioTracks().forEach(t => (t.enabled = false));
       setMicMuted(true); setCameraOff(!vidTrack); setMediaActive(true);
       callActiveRef.current = true;
-      LOG('local video srcObject attached');
+      console.log("local video srcObject attached");
       sRef.current?.emit('media-state', { enabled: { audio: true, video: !!vidTrack, screen: false } });
       await connectAll();
-      setTimeout(() => {
-        setLocalAudioTrack(false);
-        if (vidTrack) setLocalVideoTrack(vidTrack);
-      }, 500);
       LOG('joinCall done');
     } catch (e: any) {
       if (e.name === 'NotFoundError') setError('No microphone found');
@@ -361,7 +360,13 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     const next = !micMuted;
     localStreamRef.current.getAudioTracks().forEach(t => (t.enabled = next));
     setMicMuted(!micMuted);
-    setLocalAudioTrack(!micMuted);
+    peersRef.current.forEach(({ pc }) => {
+      const sender = pc.getSenders().find(s => s.track?.kind === 'audio');
+      if (sender) {
+        const str = localStreamRef.current?.getAudioTracks()[0] ?? null;
+        sender.replaceTrack(!micMuted ? str : null).catch(() => {});
+      }
+    });
     sRef.current?.emit('media-state', { enabled: { audio: !micMuted, video: screenSharing || !cameraOff, screen: screenSharing } });
   }, [micMuted, cameraOff, screenSharing]);
 
@@ -374,10 +379,17 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         const cs = await navigator.mediaDevices.getUserMedia({ video: VID_MAIN });
         const nt = cs.getVideoTracks()[0];
         if (localStreamRef.current) localStreamRef.current.addTrack(nt);
-        setLocalVideoTrack(nt, false);
         setCameraOff(false);
-        LOG('camera stream started');
-        LOG('local video srcObject attached');
+        peersRef.current.forEach(({ pc }) => {
+          const exists = pc.getSenders().some(s => s.track?.kind === 'video');
+          if (!exists && localStreamRef.current) {
+            pc.addTrack(nt, localStreamRef.current);
+            LOG('added video track to PC');
+          }
+        });
+        await renegotiateAll();
+        console.log("camera stream started");
+        console.log("local video srcObject attached");
       } catch (err: any) {
         if (err.name === 'NotFoundError') setCameraError('Camera unavailable');
         else if (err.name === 'NotAllowedError') setCameraError('Camera denied');
@@ -387,7 +399,10 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     } else {
       const tracks = localStreamRef.current?.getVideoTracks() ?? [];
       tracks.forEach(t => { t.stop(); localStreamRef.current?.removeTrack(t); });
-      setLocalVideoTrack(null, false);
+      peersRef.current.forEach(({ pc }) => {
+        removeLocalTracksFromPC(pc, 'video');
+      });
+      await renegotiateAll();
       setCameraOff(true);
     }
     force();
@@ -400,15 +415,21 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       const cs = await navigator.mediaDevices.getUserMedia({ video: VID_MAIN });
       const nt = cs.getVideoTracks()[0];
       if (localStreamRef.current) { localStreamRef.current.getVideoTracks().forEach(t => { t.stop(); localStreamRef.current?.removeTrack(t); }); localStreamRef.current.addTrack(nt); }
-      setLocalVideoTrack(nt, false);
       setCameraOff(false);
-      LOG('camera stream started');
+      peersRef.current.forEach(({ pc }) => {
+        removeLocalTracksFromPC(pc, 'video');
+        if (localStreamRef.current) {
+          pc.addTrack(nt, localStreamRef.current);
+        }
+      });
+      await renegotiateAll();
+      console.log("camera stream started");
     } catch { setCameraError('Camera still unavailable'); }
     force();
   }, []);
 
   const startSS = useCallback(async () => {
-    LOG('screen stream started');
+    console.log("screen share started");
     setLoading(true); setError('');
     try {
       const ds = await navigator.mediaDevices.getDisplayMedia({
@@ -433,11 +454,19 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       if (ls) {
         const old = ls.getVideoTracks();
         ls.addTrack(vt);
-        setLocalVideoTrack(vt, true);
         old.forEach(t => { ls.removeTrack(t); t.stop(); });
       }
+      peersRef.current.forEach(({ pc }) => {
+        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (videoSender) {
+          videoSender.replaceTrack(vt);
+          LOG('screen track replaced for peer');
+        }
+      });
+      await renegotiateAll();
+      console.log("screen offer renegotiated");
       setScreenSharing(true); setCameraOff(false); force();
-      sRef.current?.emit('media-state', { enabled: { audio: !micMuted, video: true, screen: true } });
+      sRef.current?.emit('media-state', { enabled: { audio: !micMuted, video: true, screen: true, screenOwnerId: sidRef.current } });
     } catch (e: any) {
       if (e.name === 'NotAllowedError') setError('Screen share denied');
       else setError(e.message || 'Screen share failed');
@@ -453,18 +482,28 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         const cs = await navigator.mediaDevices.getUserMedia({ video: VID_MAIN });
         const ct = cs.getVideoTracks()[0];
         ls?.addTrack(ct);
-        setLocalVideoTrack(ct, false);
-        LOG('camera stream started');
-      } catch { setLocalVideoTrack(null); wasCamRef.current = false; }
+        peersRef.current.forEach(({ pc }) => {
+          const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+          if (videoSender) videoSender.replaceTrack(ct);
+        });
+        await renegotiateAll();
+        console.log("camera stream started");
+        console.log("local video srcObject attached");
+      } catch { setCameraOff(true); }
     } else {
-      setLocalVideoTrack(null);
+      peersRef.current.forEach(({ pc }) => {
+        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (videoSender) videoSender.replaceTrack(null);
+      });
+      await renegotiateAll();
     }
     old.forEach(t => { ls?.removeTrack(t); t.stop(); });
     if (screenStreamRef.current) { screenStreamRef.current.getTracks().forEach(t => t.stop()); screenStreamRef.current = null; }
     setScreenSharing(false);
     if (!wasCamRef.current) setCameraOff(true);
+    console.log("screen share ended");
     force();
-    sRef.current?.emit('media-state', { enabled: { audio: !micMuted, video: wasCamRef.current, screen: false } });
+    sRef.current?.emit('media-state', { enabled: { audio: !micMuted, video: wasCamRef.current, screen: false, screenOwnerId: null } });
   }, [micMuted]);
 
   const leaveCall = useCallback(() => {
@@ -501,28 +540,17 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       const pc = pd.pc;
       try {
         if (signal.type === 'offer') {
-          LOG('recv offer', from);
+          console.log("received offer from", from);
           if (pc.signalingState === 'have-local-offer')
             await pc.setLocalDescription({ type: 'rollback' as unknown as RTCSdpType });
+          addLocalTracksToPC(pc);
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           const ans = await pc.createAnswer();
           await pc.setLocalDescription(ans);
           socket.emit('signal', { to: from, signal: { type: 'answer', sdp: pc.localDescription } });
-          if (localStreamRef.current) {
-            const at = localStreamRef.current.getAudioTracks()[0];
-            if (at) {
-              const s = getSender(pc, 'audio');
-              if (s) { s.replaceTrack(at).catch(() => {}); const t = getTransceiver(pc, 'audio'); if (t) t.direction = at.enabled ? 'sendrecv' : 'inactive'; }
-            }
-            const vt = localStreamRef.current.getVideoTracks()[0];
-            if (vt) {
-              const s = getSender(pc, 'video');
-              if (s) { s.replaceTrack(vt).catch(() => {}); const t = getTransceiver(pc, 'video'); if (t) t.direction = screenSharing ? 'sendrecv' : vt.enabled ? 'sendrecv' : 'inactive'; }
-            }
-          }
           socket.emit('media-state', { enabled: { audio: !micMuted, video: !cameraOff, screen: screenSharing } });
         } else if (signal.type === 'answer') {
-          LOG('recv answer', from);
+          console.log("received answer from", from);
           if (pc.signalingState === 'have-local-offer')
             await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
         } else if (signal.type === 'ice-candidate') {
@@ -537,7 +565,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
   useEffect(() => {
     if (!socket) return;
-    const h = ({ socketId: sid, enabled }: { socketId: string; enabled: { audio?: boolean; video?: boolean; screen?: boolean } }) => {
+    const h = ({ socketId: sid, enabled }: { socketId: string; enabled: { audio?: boolean; video?: boolean; screen?: boolean; screenOwnerId?: string | null } }) => {
       remMediaRef.current.set(sid, { audio: !!enabled.audio, video: !!enabled.video, screen: !!enabled.screen });
       if (enabled.screen) setScreenShareBy(sid);
       else if (screenShareBy === sid) setScreenShareBy(null);
@@ -674,7 +702,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         </div>
       )}
 
-      {/* ============ ScreenShareStage (full center area) ============ */}
+      {/* ============ ScreenShareStage ============ */}
       {hasScreenShare && (
         <div ref={screenStageRef}
           className={`fixed z-20 pointer-events-auto animate-scale-in
@@ -686,7 +714,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
           }}>
           <div className={`relative w-full h-full overflow-hidden ${screenFullscreen ? '' : 'rounded-2xl'} bg-black/80 flex items-center justify-center`}
             style={{ aspectRatio: '16/9' }}>
-            {/* Top bar */}
             <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent">
               <div className="flex items-center gap-2.5">
                 <Monitor className="w-4 h-4 text-emerald-400" />
@@ -710,12 +737,11 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
                 </button>
               </div>
             </div>
-            {/* Video */}
             {screenShareStream ? (
               <video ref={el => {
                 if (el && screenShareStream && el.srcObject !== screenShareStream) {
                   el.srcObject = screenShareStream;
-                  LOG('screen stream started');
+                  console.log("screen share started");
                 }
               }} autoPlay playsInline className="w-full h-full object-contain" />
             ) : (
@@ -723,7 +749,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
                 <Loader2 className="w-12 h-12 text-white/20 animate-spin" />
               </div>
             )}
-            {/* Bottom bar */}
             <div className="absolute bottom-0 left-0 right-0 z-20 px-4 py-2 bg-gradient-to-t from-black/60 to-transparent">
               <span className="text-[11px] text-white/40 font-mono">Screen Share &bull; Live</span>
             </div>
@@ -740,7 +765,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
             <video ref={el => {
               if (el && localStreamRef.current && el.srcObject !== localStreamRef.current) {
                 el.srcObject = localStreamRef.current;
-                LOG('local video srcObject attached');
+                console.log("local video srcObject attached");
               }
             }} autoPlay playsInline muted
               className={`absolute inset-0 w-full h-full object-cover scale-x-[-1] ${cameraOff || !localStreamRef.current?.getVideoTracks().length ? 'hidden' : ''}`} />
@@ -755,9 +780,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
                 {micMuted && <MicOff className="w-2.5 h-2.5 text-red-400 shrink-0" />}
                 {!micMuted && <Mic className="w-2.5 h-2.5 text-emerald-400/70 shrink-0" />}
                 {cameraOff && <CameraOff className="w-2.5 h-2.5 text-red-400 shrink-0" />}
-                {!cameraOff && localStreamRef.current?.getVideoTracks().length ? (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)] animate-pulse shrink-0" />
-                ) : null}
               </div>
             </div>
           </div>
@@ -773,7 +795,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
                 const s = remoteStreamsRef.current.get(p.socketId);
                 if (el && s && el.srcObject !== s) {
                   el.srcObject = s;
-                  LOG('remote video srcObject attached', p.socketId);
+                  console.log("attached remote video", p.socketId);
                 }
               }} autoPlay playsInline
                 className={`absolute inset-0 w-full h-full object-cover ${p.stream ? '' : 'hidden'}`} />
