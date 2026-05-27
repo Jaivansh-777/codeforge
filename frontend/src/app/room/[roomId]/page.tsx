@@ -293,7 +293,7 @@ function RoomContent() {
       />
 
       {/* Nav */}
-      <nav className="relative z-[100] px-4 sm:px-6 pt-4">
+      <nav className="relative z-40 px-4 sm:px-6 pt-4">
         <div className="max-w-7xl mx-auto glass-nav rounded-2xl px-3 sm:px-5 shadow-[0_8px_40px_rgba(0,0,0,0.5)]">
           <div className="flex items-center justify-between h-14">
             <div className="flex items-center gap-3">

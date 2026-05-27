@@ -775,7 +775,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       {/* ============ Screen Share Dominant Stage ============ */}
       {hasScreenShare && (
         <div ref={screenStageRef}
-          className={`fixed z-[9500] pointer-events-auto animate-scale-in
+          className={`fixed z-30 pointer-events-auto animate-scale-in
             ${screenFullscreen ? 'inset-0 bg-black' : 'left-4 lg:left-[216px]'}`}
           style={{
             top: '72px',
@@ -824,21 +824,43 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         </div>
       )}
 
+      {/* ============ Desktop Local Camera Preview (bottom-right) ============ */}
+      <div className="hidden sm:block fixed bottom-24 right-4 z-30 w-[180px] h-[110px] rounded-2xl overflow-hidden border border-white/[0.08] bg-[#0a0a0e] shadow-2xl animate-fade-in">
+        <video ref={localVidRef} autoPlay playsInline muted
+          className={`w-full h-full object-cover scale-x-[-1] ${cameraOff || !lsRef.current?.getVideoTracks().length ? 'hidden' : ''}`} />
+        {(!cameraOff && (lsRef.current?.getVideoTracks().length ?? 0) > 0) ? null : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold bg-white/[0.06] text-white/30">{initial}</div>
+          </div>
+        )}
+        <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/80 to-transparent">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-medium text-white/80 drop-shadow-md">You</span>
+            {micMuted && <MicOff className="w-2.5 h-2.5 text-red-400 shrink-0" />}
+            {!micMuted && <Mic className="w-2.5 h-2.5 text-emerald-400/70 shrink-0" />}
+            {cameraOff && <CameraOff className="w-2.5 h-2.5 text-red-400 shrink-0" />}
+          </div>
+        </div>
+      </div>
+
       {/* ============ Participant Tiles Bottom Strip ============ */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9600] pointer-events-none"
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none"
         style={{ maxWidth: 'min(90vw, 800px)' }}>
         <div className="flex items-center gap-2 px-3 py-2 mirror-glass rounded-2xl pointer-events-auto flex-wrap justify-center">
-          <VideoTile
-            stream={lsRef.current}
-            name={userName}
-            hasVideo={!cameraOff && !!lsRef.current?.getVideoTracks().length}
-            isScreen={screenSharing}
-            isLocal
-            muted
-            micMuted={micMuted}
-            compact
-            speaking={speakingId === sidRef.current}
-          />
+          {/* Local tile on mobile only */}
+          <div className="sm:hidden">
+            <VideoTile
+              stream={lsRef.current}
+              name={userName}
+              hasVideo={!cameraOff && !!lsRef.current?.getVideoTracks().length}
+              isScreen={screenSharing}
+              isLocal
+              muted
+              micMuted={micMuted}
+              compact
+              speaking={speakingId === sidRef.current}
+            />
+          </div>
           {remoteParticipants.map(p => (
             <VideoTile key={p.socketId} {...p} compact speaking={speakingId === p.socketId} />
           ))}
