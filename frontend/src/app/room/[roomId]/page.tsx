@@ -357,6 +357,8 @@ function RoomContent() {
                 socketId={socketId}
                 participants={participants}
                 userName={userName}
+                chatMessages={chatMessages}
+                onSendChat={handleSendChat}
               />
 
               {/* Copy invite */}
