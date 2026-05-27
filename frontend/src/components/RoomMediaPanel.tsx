@@ -510,8 +510,22 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     LOG('startSS');
     setLoading(true); setError('');
     try {
-      const ds = await navigator.mediaDevices.getDisplayMedia({ video: VID_SCR, audio: true });
+      const ds = await navigator.mediaDevices.getDisplayMedia({
+        video: { ...VID_SCR, displaySurface: 'monitor' } as MediaTrackConstraints,
+        audio: true,
+        preferCurrentTab: false,
+      } as any);
       const vt = ds.getVideoTracks()[0];
+      // Detect recursive mirror
+      try {
+        const s = vt.getSettings() as any;
+        if (s.displaySurface === 'browser') {
+          toast('You\'re sharing a browser tab — switch to "Entire Screen" or a different window to avoid recursive mirroring.', {
+            duration: 7000, icon: '⚠️',
+            style: { background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.3)', fontSize: '12px', borderRadius: '12px' },
+          });
+        }
+      } catch {}
       vt.onended = () => stopSS();
       scrStreamRef.current = ds;
       wasCamRef.current = !cameraOff;
@@ -523,7 +537,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         old.forEach(t => { ls.removeTrack(t); t.stop(); });
       }
       setScreenSharing(true); setCameraOff(false); setLocalStreamReady(false); force();
-      toast('Tip: Share a different window to avoid mirror.', { duration: 4000, style: { background: 'rgba(10,10,14,0.95)', color: '#e4e4e7', border: '1px solid rgba(251,191,36,0.3)', fontSize: '12px', borderRadius: '12px' } });
       sRef.current?.emit('media-state', { enabled: { audio: !micMuted, video: true, screen: true } });
     } catch (e: any) {
       if (e.name === 'NotAllowedError') setError('Screen share denied');
@@ -759,72 +772,76 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         </div>
       )}
 
-      {/* ============ Media Overlay Layer ============ */}
-      <div className="fixed inset-0 z-[9000] pointer-events-none">
-        {/* Screen Share Dominant Stage */}
-        {hasScreenShare && (
-          <div ref={screenStageRef}
-            className={`absolute animate-fade-in pointer-events-auto
-              ${screenFullscreen ? 'inset-0 bg-black' : 'inset-x-4 top-[80px] bottom-24'}`}>
-            <div className={`relative w-full h-full mx-auto ${screenFullscreen ? '' : 'max-w-[80vw]'}`}
-              style={screenFullscreen ? {} : { aspectRatio: '16/9', maxHeight: 'calc(100vh - 200px)' }}>
-              {/* Top bar */}
-              <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2 bg-gradient-to-b from-black/80 via-black/40 to-transparent rounded-t-2xl">
-                <div className="flex items-center gap-2">
-                  <Monitor className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-xs font-medium text-white/80">
-                    {participants.find(p => p.socketId === screenShareBy)?.name ?? 'Someone'}&apos;s Screen
+      {/* ============ Screen Share Dominant Stage ============ */}
+      {hasScreenShare && (
+        <div ref={screenStageRef}
+          className={`fixed z-[9500] pointer-events-auto animate-scale-in
+            ${screenFullscreen ? 'inset-0 bg-black' : 'left-4 lg:left-[216px]'}`}
+          style={{
+            top: '72px',
+            right: '16px',
+            bottom: screenFullscreen ? '0' : '100px',
+          }}>
+          <div className={`relative w-full h-full overflow-hidden ${screenFullscreen ? '' : 'rounded-2xl'} bg-black/80`}>
+            {/* Top bar */}
+            <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent">
+              <div className="flex items-center gap-2.5">
+                <Monitor className="w-4 h-4 text-emerald-400" />
+                <span className="text-sm font-medium text-white/90">
+                  {participants.find(p => p.socketId === screenShareBy)?.name ?? 'Someone'}&apos;s Screen
+                </span>
+                {screenShareBy === sidRef.current && (
+                  <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-500/30">
+                    Presenting
                   </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={toggleFullscreen}
-                    className="p-1.5 rounded-lg hover:bg-white/[0.1] text-white/50 hover:text-white/80 transition-all" title={screenFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
-                    {screenFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                  </button>
-                  <button onClick={() => setScreenShareBy(null)}
-                    className="p-1.5 rounded-lg hover:bg-red-500/20 text-white/50 hover:text-red-400 transition-all" title="Close">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                )}
               </div>
-              {/* Video */}
-              {screenShareStream ? (
-                <video ref={el => { if (el && screenShareStream && el.srcObject !== screenShareStream) el.srcObject = screenShareStream; }}
-                  autoPlay playsInline className={`w-full h-full object-contain rounded-2xl ${screenFullscreen ? 'rounded-none' : ''} bg-black/80`} />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-black/80 rounded-2xl">
-                  <Loader2 className="w-10 h-10 text-white/30 animate-spin" />
-                </div>
-              )}
-              {/* Bottom label */}
-              <div className="absolute bottom-0 left-0 right-0 z-20 px-4 py-2 bg-gradient-to-t from-black/60 to-transparent rounded-b-2xl">
-                <span className="text-[10px] text-white/40 font-mono">Screen Share &bull; Live</span>
+              <div className="flex items-center gap-1.5">
+                <button onClick={toggleFullscreen}
+                  className="p-1.5 rounded-lg hover:bg-white/[0.1] text-white/50 hover:text-white/80 transition-all" title={screenFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+                  {screenFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button onClick={() => setScreenShareBy(null)}
+                  className="p-1.5 rounded-lg hover:bg-red-500/20 text-white/50 hover:text-red-400 transition-all" title="Close">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
+            {/* Video */}
+            {screenShareStream ? (
+              <video ref={el => { if (el && screenShareStream && el.srcObject !== screenShareStream) el.srcObject = screenShareStream; }}
+                autoPlay playsInline className="w-full h-full object-contain" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Loader2 className="w-12 h-12 text-white/20 animate-spin" />
+              </div>
+            )}
+            {/* Bottom bar */}
+            <div className="absolute bottom-0 left-0 right-0 z-20 px-4 py-2 bg-gradient-to-t from-black/60 to-transparent">
+              <span className="text-[11px] text-white/40 font-mono">Screen Share &bull; Live</span>
+            </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Participant Tiles */}
-        <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-[9100] flex items-center gap-2 pointer-events-none transition-all duration-300 ease-out`}
-          style={{ maxWidth: 'min(90vw, 800px)' }}>
-          <div className="flex items-center gap-2 px-3 py-2 mirror-glass rounded-2xl pointer-events-auto flex-wrap justify-center">
-            {/* Local tile */}
-            <VideoTile
-              stream={lsRef.current}
-              name={userName}
-              hasVideo={!cameraOff && !!lsRef.current?.getVideoTracks().length}
-              isScreen={screenSharing}
-              isLocal
-              muted
-              micMuted={micMuted}
-              compact
-              speaking={speakingId === sidRef.current}
-            />
-            {/* Remote tiles */}
-            {remoteParticipants.map(p => (
-              <VideoTile key={p.socketId} {...p} compact speaking={speakingId === p.socketId} />
-            ))}
-          </div>
+      {/* ============ Participant Tiles Bottom Strip ============ */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9600] pointer-events-none"
+        style={{ maxWidth: 'min(90vw, 800px)' }}>
+        <div className="flex items-center gap-2 px-3 py-2 mirror-glass rounded-2xl pointer-events-auto flex-wrap justify-center">
+          <VideoTile
+            stream={lsRef.current}
+            name={userName}
+            hasVideo={!cameraOff && !!lsRef.current?.getVideoTracks().length}
+            isScreen={screenSharing}
+            isLocal
+            muted
+            micMuted={micMuted}
+            compact
+            speaking={speakingId === sidRef.current}
+          />
+          {remoteParticipants.map(p => (
+            <VideoTile key={p.socketId} {...p} compact speaking={speakingId === p.socketId} />
+          ))}
         </div>
       </div>
 
