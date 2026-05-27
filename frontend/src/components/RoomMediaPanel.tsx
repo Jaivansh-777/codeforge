@@ -3,10 +3,9 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Mic, MicOff, Phone, PhoneOff, Loader2,
-  Camera, CameraOff, Monitor, MonitorOff,
-  X, Volume2, Users, MessageSquare,
-  Wifi, WifiOff, AlertTriangle, RefreshCw, ScreenShareOff,
-  ChevronDown, ChevronUp,
+  Camera, CameraOff, Monitor,
+  X, Volume2, MessageSquare,
+  AlertTriangle, RefreshCw, ScreenShareOff,
 } from 'lucide-react';
 import type { Socket } from 'socket.io-client';
 import toast from 'react-hot-toast';
@@ -155,7 +154,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   const [showChat, setShowChat] = useState(false);
   const [localStreamReady, setLocalStreamReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [showVideoDock, setShowVideoDock] = useState(true);
 
   const sRef = useRef(socket);
   const sidRef = useRef(socketId);
@@ -367,7 +365,10 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       }, 500);
       LOG('joinCall done');
     } catch (e: any) {
-      setError(e.message || 'Microphone access denied');
+      if (e.name === 'NotFoundError') setError('No microphone found');
+      else if (e.name === 'NotAllowedError') setError('Microphone access denied');
+      else if (e.name === 'NotReadableError') setError('Microphone in use by another app');
+      else setError(e.message || 'Microphone access denied');
     } finally { setLoading(false); }
   }, []);
 
@@ -590,15 +591,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     return pd?.videoStream ?? null;
   }, [screenShareBy, mediaActive, screenShareBy]);
 
-  const allTiles = useMemo(() => {
-    const tiles: Array<{ key: string; stream: MediaStream | null; name: string; hasVideo: boolean; isScreen: boolean; isLocal: boolean; micMuted: boolean }> = [];
-    for (const p of remoteParticipants) {
-      tiles.push({ key: p.socketId, stream: p.stream, name: p.name, hasVideo: p.hasVideo, isScreen: p.isScreen, isLocal: false, micMuted: p.micMuted });
-    }
-    tiles.push({ key: 'local', stream: lsRef.current, name: userName, hasVideo: !cameraOff && !!lsRef.current?.getVideoTracks().length, isScreen: screenSharing, isLocal: true, micMuted });
-    return tiles;
-  }, [remoteParticipants, cameraOff, screenSharing, micMuted, userName, localStreamReady]);
-
   const initial = userName?.charAt(0)?.toUpperCase() ?? 'C';
 
   /* ================================================================ */
@@ -680,48 +672,54 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         </div>
       )}
 
-      {/* ============ Screen Share Stage ============ */}
-      {hasScreenShare && (
-        <div className="fixed z-[9998] pointer-events-none"
-          style={{ top: '80px', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 1100px)' }}>
-          <div className="relative w-full premium-glass-card rounded-2xl overflow-hidden border-shine pointer-events-auto shadow-[0_20px_80px_rgba(0,0,0,0.7)] animate-fade-in"
-            style={{ aspectRatio: '16/9', maxHeight: 'calc(100vh - 180px)' }}>
-            <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2 bg-gradient-to-b from-black/80 via-black/40 to-transparent">
-              <div className="flex items-center gap-2">
-                <Monitor className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-xs font-medium text-white/80">
-                  {participants.find(p => p.socketId === screenShareBy)?.name ?? 'Someone'}&apos;s Screen
-                </span>
-              </div>
-              <button onClick={() => setScreenShareBy(null)}
-                className="p-1 rounded-lg hover:bg-red-500/20 text-white/50 hover:text-red-400 transition-all" title="Close">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            {screenShareStream ? (
-              <video ref={el => { if (el && screenShareStream) el.srcObject = screenShareStream; }}
-                autoPlay playsInline className="w-full h-full object-contain bg-black/60" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-black/60">
-                <Loader2 className="w-8 h-8 text-white/30 animate-spin" />
-              </div>
-            )}
-            <div className="absolute bottom-0 left-0 right-0 z-20 px-4 py-2 bg-gradient-to-t from-black/60 to-transparent">
-              <span className="text-[10px] text-white/40 font-mono">Live &bull; Shared screen</span>
-            </div>
-          </div>
+      {/* ============ Left Sidebar: Video Tiles ============ */}
+      <div className="fixed left-3 sm:left-4 top-1/2 -translate-y-1/2 z-[9997] flex flex-col gap-3 transition-all duration-300 ease-out"
+        style={{ maxHeight: 'calc(100vh - 120px)' }}>
+        {/* Local Video (large) */}
+        <div className="w-[220px] sm:w-[280px] animate-fade-in">
+          <VideoTile
+            stream={lsRef.current}
+            name={userName}
+            hasVideo={!cameraOff && !!lsRef.current?.getVideoTracks().length}
+            isScreen={screenSharing}
+            isLocal
+            muted
+            micMuted={micMuted}
+          />
         </div>
-      )}
+        {/* Remote Participants (compact) */}
+        {remoteParticipants.length > 0 && (
+          <div className="flex flex-wrap gap-2 justify-center overflow-y-auto">
+            {remoteParticipants.map(p => (
+              <VideoTile key={p.socketId} {...p} compact />
+            ))}
+          </div>
+        )}
+      </div>
 
-      {/* ============ Video Dock (bottom strip) ============ */}
-      {showVideoDock && allTiles.length > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9997] flex items-center gap-2 px-3 py-2 pointer-events-none flex-wrap justify-center"
-          style={{ maxWidth: 'min(90vw, 800px)' }}>
-          {allTiles.map(t => (
-            <div key={t.key} className="pointer-events-auto">
-              <VideoTile {...t} compact muted={t.isLocal} />
+      {/* ============ Screen Share Stage (full viewport) ============ */}
+      {hasScreenShare && (
+        <div className="fixed inset-0 top-[72px] z-[9996] bg-black/90 animate-fade-in">
+          <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2 bg-gradient-to-b from-black/80 to-transparent">
+            <div className="flex items-center gap-2">
+              <Monitor className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-xs font-medium text-white/80">
+                {participants.find(p => p.socketId === screenShareBy)?.name ?? 'Someone'}&apos;s Screen
+              </span>
             </div>
-          ))}
+            <button onClick={() => setScreenShareBy(null)}
+              className="p-1 rounded-lg hover:bg-red-500/20 text-white/50 hover:text-red-400 transition-all" title="Close">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {screenShareStream ? (
+            <video ref={el => { if (el && screenShareStream) el.srcObject = screenShareStream; }}
+              autoPlay playsInline className="w-full h-full object-contain" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Loader2 className="w-8 h-8 text-white/30 animate-spin" />
+            </div>
+          )}
         </div>
       )}
 
@@ -749,12 +747,6 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
           </button>
         </div>
       )}
-
-      {/* ============ Video Dock Toggle ============ */}
-      <button onClick={() => setShowVideoDock(!showVideoDock)}
-        className="fixed bottom-2 left-1/2 -translate-x-1/2 z-[9997] p-1 rounded-lg bg-white/[0.04] text-white/30 hover:text-white/60 hover:bg-white/[0.08] transition-all">
-        {showVideoDock ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
-      </button>
     </>
   );
 }
