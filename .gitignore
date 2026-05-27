@@ -5,6 +5,7 @@ build/
 .env
 .env.local
 *.log
+*.tsbuildinfo
 .DS_Store
 venv/
 __pycache__/
