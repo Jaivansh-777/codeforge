@@ -90,19 +90,18 @@ function VideoTile({
   micMuted?: boolean;
   isLarge?: boolean;
 }) {
-  const ref = useRef<HTMLVideoElement>(null);
   const [ready, setReady] = useState(false);
+  const readyRef = useRef(false);
 
-  useEffect(() => {
-    if (!ref.current) return;
-    ref.current.srcObject = stream;
-    if (stream) {
-      const onReady = () => setReady(true);
-      ref.current.onloadeddata = onReady;
-      if (ref.current.readyState >= 2) setReady(true);
-      return () => { ref.current!.onloadeddata = null; };
+  const setRef = useCallback((el: HTMLVideoElement | null) => {
+    if (el) {
+      el.srcObject = stream;
+      if (el.readyState >= 2) { setReady(true); readyRef.current = true; }
+      else {
+        const onData = () => { setReady(true); readyRef.current = true; el.onloadeddata = null; };
+        el.onloadeddata = onData;
+      }
     }
-    setReady(false);
   }, [stream]);
 
   const initial = name?.charAt(0)?.toUpperCase() ?? '?';
@@ -116,18 +115,16 @@ function VideoTile({
       {/* Background */}
       <div className="absolute inset-0 bg-[#0a0a0e]" />
 
-      {/* Video */}
-      {hasVideo && stream ? (
-        <video
-          ref={ref}
-          autoPlay
-          playsInline
-          muted={isLocal || muted}
-          className={`absolute inset-0 w-full h-full ${isLocal ? 'scale-x-[-1]' : ''} ${
-            isScreen ? 'object-contain' : 'object-cover'
-          }`}
-        />
-      ) : null}
+      {/* Video — always render the element so the ref is stable */}
+      <video
+        ref={setRef}
+        autoPlay
+        playsInline
+        muted={isLocal || muted}
+        className={`absolute inset-0 w-full h-full ${isLocal ? 'scale-x-[-1]' : ''} ${
+          isScreen ? 'object-contain' : hasVideo && stream ? 'object-cover' : 'hidden'
+        }`}
+      />
 
       {/* Loading spinner */}
       {hasVideo && stream && !ready && (
