@@ -409,7 +409,7 @@ function RoomContent() {
 
         {/* Chat mobile/overlay toggle */}
         {showChat && (
-          <div className="lg:hidden fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
+          <div className="lg:hidden fixed inset-0 z-[9997] flex items-end justify-center bg-black/60 backdrop-blur-sm">
             <div className="w-full max-w-lg h-[60vh] bg-[#050505] rounded-t-[28px] border border-white/[0.08] overflow-hidden flex flex-col">
               <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
                 <span className="text-xs font-bold text-white/60 uppercase tracking-wider">Chat</span>

@@ -12,6 +12,7 @@ import InputPanel from '@/components/InputPanel';
 import OutputPanel from '@/components/OutputPanel';
 import { CODE_TEMPLATES } from '@/lib/templates';
 import { executeCode } from '@/lib/api';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import type { ExecuteResponse, ExecutionStats } from '@/lib/types';
 
 const LANG_DISPLAY: Record<string, { name: string; ext: string }> = {
@@ -24,7 +25,7 @@ const LANG_DISPLAY: Record<string, { name: string; ext: string }> = {
   assembly: { name: 'Assembly', ext: 'asm' },
 };
 
-export default function CompilerPage() {
+function CompilerContent() {
   const [language, setLanguage] = useState('python');
   const [code, setCode] = useState(CODE_TEMPLATES.python);
   const [input, setInput] = useState('');
@@ -403,5 +404,13 @@ export default function CompilerPage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function CompilerPage() {
+  return (
+    <ErrorBoundary>
+      <CompilerContent />
+    </ErrorBoundary>
   );
 }

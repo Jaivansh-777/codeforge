@@ -545,9 +545,143 @@ body {
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.4);
   transition: all 0.2s ease;
+  cursor: pointer;
 }
 .glass-icon-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.7);
   border-color: rgba(255, 255, 255, 0.15);
+}
+.glass-icon-btn:active {
+  transform: scale(0.92);
+}
+
+/* === Premium SaaS Dashboard Widgets === */
+.dashboard-widget {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.3s ease;
+}
+.dashboard-widget:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 12px 48px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* === Pulse ring for active states (recording, speaking) === */
+.pulse-ring {
+  animation: pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes pulseRing {
+  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+
+/* === Status dot indicator === */
+.status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.status-dot-live {
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
+  animation: pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.status-dot-offline {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* === Smooth expand/collapse === */
+.expand-collapse {
+  transition: grid-template-rows 0.3s ease, opacity 0.3s ease;
+}
+
+/* === Micro interactions === */
+.micro-scale {
+  transition: transform 0.15s ease;
+}
+.micro-scale:active {
+  transform: scale(0.94);
+}
+
+.micro-opacity {
+  transition: opacity 0.2s ease;
+}
+.micro-opacity:hover {
+  opacity: 0.8;
+}
+
+/* === Skeleton loading shimmer === */
+.skeleton-loading {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.02) 25%,
+    rgba(255,255,255,0.06) 50%,
+    rgba(255,255,255,0.02) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* === Focus visible ring for keyboard nav === */
+*:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.3);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* === Toast notification premium style === */
+.premium-toast {
+  background: rgba(10, 10, 14, 0.95) !important;
+  backdrop-filter: blur(24px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
+  font-size: 13px !important;
+  color: #e4e4e7 !important;
+}
+
+/* === Premium divider === */
+.premium-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+  border: none;
+  margin: 0;
+}
+
+/* === Tooltip glass style === */
+.premium-tooltip {
+  background: rgba(10, 10, 14, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* === Bento grid helper === */
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.bento-cell {
+  border-radius: 20px;
+  overflow: hidden;
+  transition: all 0.3s ease;
 }

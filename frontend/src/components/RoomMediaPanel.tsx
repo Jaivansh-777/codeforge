@@ -2,9 +2,9 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  Mic, MicOff, Phone, PhoneOff, Loader2, ChevronDown,
+  Mic, MicOff, Phone, PhoneOff, Loader2,
   Camera, CameraOff, Monitor, MonitorOff,
-  X, Maximize2, Minimize2, Wifi, WifiOff, RefreshCw, Eye, EyeOff
+  X, Maximize2, Minimize2, Wifi, WifiOff, Volume2,
 } from 'lucide-react';
 import type { Socket } from 'socket.io-client';
 import toast from 'react-hot-toast';
@@ -45,7 +45,99 @@ const SCR_CONSTRAINTS: MediaTrackConstraints = {
   frameRate: { ideal: 30 },
 };
 
+const LOW_VID_CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 320 },
+  height: { ideal: 240 },
+  frameRate: { ideal: 5 },
+};
+
 function log(...a: any[]) { console.log('[WebRTC]', ...a); }
+
+function ParticipantTile({
+  stream,
+  name,
+  hasVideo,
+  isScreen,
+  isLocal,
+  initial,
+  speaking,
+  micMuted,
+  muted,
+}: {
+  stream: MediaStream | null;
+  name: string;
+  hasVideo: boolean;
+  isScreen: boolean;
+  isLocal: boolean;
+  initial: string;
+  speaking: boolean;
+  micMuted: boolean;
+  muted?: boolean;
+}) {
+  const vidRef = useRef<HTMLVideoElement | null>(null);
+  const [streamReady, setStreamReady] = useState(false);
+
+  useEffect(() => {
+    if (vidRef.current && stream) {
+      vidRef.current.srcObject = stream;
+      setStreamReady(true);
+    } else {
+      setStreamReady(false);
+    }
+  }, [stream]);
+
+  return (
+    <div
+      className="pointer-events-auto premium-glass-card-light rounded-xl overflow-hidden border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all hover:scale-105"
+      style={{ width: '128px', height: '96px' }}
+    >
+      <div className="relative w-full h-full bg-[#0a0a0e]">
+        {hasVideo && stream ? (
+          <>
+            {!streamReady && (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0e] z-10">
+                <Loader2 className="w-5 h-5 text-white/20 animate-spin" />
+              </div>
+            )}
+            <video
+              ref={vidRef}
+              autoPlay
+              playsInline
+              muted={isLocal || muted}
+              className={`absolute inset-0 w-full h-full ${isLocal ? 'scale-x-[-1]' : ''} object-contain bg-[#0a0a0e]`}
+            />
+          </>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+              speaking ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/[0.06] text-white/50'
+            }`}>
+              {initial}
+            </div>
+          </div>
+        )}
+        {isScreen && (
+          <div className="absolute top-1 left-1 z-10 bg-emerald-500/20 rounded-md px-1 py-0.5">
+            <Monitor className="w-2.5 h-2.5 text-emerald-400" />
+          </div>
+        )}
+        {speaking && !micMuted && (
+          <div className="absolute inset-0 rounded-xl border-2 border-emerald-400/40 pointer-events-none" />
+        )}
+        <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent">
+          <div className="flex items-center gap-1">
+            <span className="text-[8px] text-white/60 font-medium drop-shadow-md truncate max-w-[70px]">
+              {isLocal ? 'You' : name}
+            </span>
+            {isScreen && <Monitor className="w-2 h-2 text-emerald-400 shrink-0" />}
+            {micMuted && <MicOff className="w-2 h-2 text-red-400 shrink-0" />}
+            {!micMuted && !isLocal && <Volume2 className="w-2 h-2 text-emerald-400/60 shrink-0" />}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function RoomMediaPanel({ socket, socketId, participants, userName }: Props) {
   const [mediaActive, setMediaActive] = useState(false);
@@ -60,7 +152,8 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   const [screenShareName, setScreenShareName] = useState('');
   const [showScreenPanel, setShowScreenPanel] = useState(true);
   const [connStates, setConnStates] = useState<Map<string, string>>(new Map());
-  const [showLocalPreview, setShowLocalPreview] = useState(false);
+  const [localStreamReady, setLocalStreamReady] = useState(false);
+  const [showLocalPreview, setShowLocalPreview] = useState(true);
 
   const lsRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -77,6 +170,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   const remMediaRef = useRef<Map<string, RemoteMediaState>>(new Map());
   const wasCamRef = useRef(false);
   const scrByRef = useRef<string | null>(null);
+  const forceTick = useRef(0);
 
   sRef.current = socket;
   sidRef.current = socketId;
@@ -84,11 +178,17 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   scrByRef.current = screenShareBy;
 
   const [, tick] = useState(0);
-  const force = useCallback(() => tick(n => n + 1), []);
+  const force = useCallback(() => {
+    forceTick.current++;
+    tick(n => n + 1);
+  }, []);
 
+  // Sync local video ref on every render
   useEffect(() => {
-    if (localVidRef.current && lsRef.current)
+    if (localVidRef.current && lsRef.current) {
       localVidRef.current.srcObject = lsRef.current;
+      setLocalStreamReady(true);
+    }
   });
 
   // -- Speaking --
@@ -195,7 +295,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       }
       if (e.track.kind === 'video') {
         remStreamsRef.current.set(targetId, e.streams[0]);
-        force();
+        setTimeout(() => force(), 0);
       }
     };
 
@@ -234,7 +334,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     remMediaRef.current.delete(targetId);
     updConnState(targetId, 'closed');
     if (scrByRef.current === targetId) { setScreenShareBy(null); setScreenShareName(''); }
-    force();
+    setTimeout(() => force(), 0);
   }
 
   async function sendOffer(targetId: string) {
@@ -297,7 +397,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
         bcastVid(vt, true);
         old.forEach(t => { ls.removeTrack(t); t.stop(); });
       }
-      setScreenSharing(true); setCameraOff(false); setShowLocalPreview(false); force();
+      setScreenSharing(true); setCameraOff(false); setLocalStreamReady(false); force();
       toast('Tip: Share entire screen or a different window instead of this browser tab to avoid mirror effect.', {
         duration: 5000, style: { background: 'rgba(10,10,14,0.95)', color: '#e4e4e7', border: '1px solid rgba(251,191,36,0.3)', fontSize: '12px', borderRadius: '12px' },
       });
@@ -320,7 +420,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       } catch { bcastVid(null); wasCamRef.current = false; }
     } else {
       try {
-        const fb = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, frameRate: 5 } });
+        const fb = await navigator.mediaDevices.getUserMedia({ video: LOW_VID_CONSTRAINTS });
         const ft = fb.getVideoTracks()[0];
         ft.enabled = false;
         ls?.addTrack(ft);
@@ -329,7 +429,10 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
     }
     old.forEach(t => { ls?.removeTrack(t); t.stop(); });
     if (scrStreamRef.current) { scrStreamRef.current.getTracks().forEach(t => t.stop()); scrStreamRef.current = null; }
-    if (localVidRef.current && ls) localVidRef.current.srcObject = ls;
+    if (localVidRef.current && ls) {
+      localVidRef.current.srcObject = ls;
+      setLocalStreamReady(true);
+    }
     setScreenSharing(false);
     if (!wasCamRef.current) setCameraOff(true);
     force();
@@ -382,7 +485,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       } else if (scrByRef.current === sid) {
         setScreenShareBy(null); setScreenShareName('');
       }
-      force();
+      setTimeout(() => force(), 0);
     };
     socket.on('media-state', h);
     return () => { socket.off('media-state', h); };
@@ -405,8 +508,12 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       lsRef.current = st;
       st.getAudioTracks().forEach(t => (t.enabled = false));
       setMicMuted(true); setCameraOff(!vt); setMediaActive(true);
+      if (vt) setLocalStreamReady(true);
       startSpk(st);
-      if (localVidRef.current) localVidRef.current.srcObject = st;
+      if (localVidRef.current) {
+        localVidRef.current.srcObject = st;
+        setLocalStreamReady(true);
+      }
       sRef.current?.emit('media-state', { enabled: { audio: true, video: !!vt, screen: false } });
       await connectAll();
     } catch (e: any) {
@@ -495,7 +602,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
   if (minimized) {
     return (
       <button onClick={() => setMinimized(false)}
-        className="fixed top-[76px] right-4 z-[9999] w-12 h-12 rounded-full premium-glass-card border-shine flex items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.6)] hover:scale-105 transition-transform">
+        className="fixed top-[76px] right-4 z-[99999] w-12 h-12 rounded-full premium-glass-card border-shine flex items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.6)] hover:scale-105 transition-transform">
         <div className="relative">
           <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${speaking ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/[0.08] text-white/70'}`}>{initial}</div>
           {speaking && <div className="absolute inset-0 rounded-full border-2 border-emerald-400/40 animate-ping" />}
@@ -507,11 +614,11 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
 
   return (
     <>
-      {/* Screen Share Panel - positioned within room content, not overlapping UI */}
+      {/* Screen Share Panel */}
       {hasScreenShare && showScreenPanel && (() => {
         const str = remStreamsRef.current.get(screenShareBy!) || null;
         return (
-          <div className="fixed z-[60] pointer-events-none"
+          <div className="fixed z-[9998] pointer-events-none"
             style={{ top: '80px', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 1100px)' }}>
             <div className="relative w-full premium-glass-card rounded-2xl overflow-hidden border-shine pointer-events-auto shadow-[0_20px_80px_rgba(0,0,0,0.7)] animate-fade-in"
               style={{ aspectRatio: '16/9', maxHeight: 'calc(100vh - 180px)' }}>
@@ -551,48 +658,48 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       {/* Screen Share minimized indicator */}
       {hasScreenShare && !showScreenPanel && (
         <button onClick={() => setShowScreenPanel(true)}
-          className="fixed left-4 bottom-20 z-[60] premium-glass-card rounded-xl px-3 py-2 border-shine flex items-center gap-2 shadow-[0_8px_32px_rgba(0,0,0,0.6)] animate-slide-down">
+          className="fixed left-4 bottom-20 z-[99999] premium-glass-card rounded-xl px-3 py-2 border-shine flex items-center gap-2 shadow-[0_8px_32px_rgba(0,0,0,0.6)] animate-slide-down">
           <Monitor className="w-3.5 h-3.5 text-emerald-400" />
           <span className="text-[10px] text-white/60 font-medium">{screenShareName}&apos;s Screen</span>
           <Maximize2 className="w-3 h-3 text-white/40" />
         </button>
       )}
 
-      {/* Bottom Tile Dock - horizontal layout, not overlapping anything */}
-      <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] flex items-end gap-2 px-3 py-2 pointer-events-none flex-wrap justify-center"
-        style={{ maxWidth: 'min(90vw, 800px)' }}>
-        {/* Remote tiles */}
-        {remoteList.map(p => (
-          <div key={p.socketId}
-            className="pointer-events-auto premium-glass-card-light rounded-xl overflow-hidden border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all hover:scale-105"
-            style={{ width: '120px', height: '90px' }}>
-            <div className="relative w-full h-full bg-[#0a0a0e]">
-              {p.hasVideo ? (
-                <video ref={el => { if (el && p.stream) el.srcObject = p.stream; }}
-                  autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-white/[0.06] text-white/50">
-                    {p.name.charAt(0).toUpperCase()}
-                  </div>
-                </div>
-              )}
-              <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent">
-                <div className="flex items-center gap-1">
-                  <span className="text-[8px] text-white/60 font-medium drop-shadow-md truncate max-w-[70px]">{p.name}</span>
-                  {p.isScreen && <Monitor className="w-2 h-2 text-emerald-400 shrink-0" />}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-        {/* Local tile */}
+      {/* Remote participant tiles */}
+      {remoteList.length > 0 && (
+        <div className="fixed bottom-[88px] left-1/2 -translate-x-1/2 z-[99999] flex items-end gap-2 px-3 py-2 pointer-events-none flex-wrap justify-center"
+          style={{ maxWidth: 'min(90vw, 800px)' }}>
+          {remoteList.map(p => (
+            <ParticipantTile
+              key={p.socketId}
+              stream={p.stream}
+              name={p.name}
+              hasVideo={p.hasVideo}
+              isScreen={p.isScreen}
+              isLocal={false}
+              initial={p.name.charAt(0).toUpperCase()}
+              speaking={false}
+              micMuted={!remMediaRef.current.get(p.socketId)?.audio}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Local tile - always show when in call */}
+      <div className="fixed bottom-[88px] right-4 z-[99999]">
         <div className="pointer-events-auto premium-glass-card-light rounded-xl overflow-hidden border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
-          style={{ width: '120px', height: '90px' }}>
+          style={{ width: '128px', height: '96px' }}>
           <div className="relative w-full h-full bg-[#0a0a0e]">
             {!cameraOff ? (
-              <video ref={localVidRef} autoPlay playsInline muted
-                className="absolute inset-0 w-full h-full object-cover scale-x-[-1]" />
+              <>
+                {!localStreamReady && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0e] z-10">
+                    <Loader2 className="w-5 h-5 text-white/20 animate-spin" />
+                  </div>
+                )}
+                <video ref={localVidRef} autoPlay playsInline muted
+                  className="absolute inset-0 w-full h-full object-contain scale-x-[-1]" />
+              </>
             ) : (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${speaking ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/[0.06] text-white/50'}`}>
@@ -600,20 +707,29 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
                 </div>
               </div>
             )}
+            {screenSharing && (
+              <div className="absolute top-1 left-1 z-10 bg-emerald-500/20 rounded-md px-1 py-0.5">
+                <Monitor className="w-2.5 h-2.5 text-emerald-400" />
+              </div>
+            )}
+            {speaking && !micMuted && (
+              <div className="absolute inset-0 rounded-xl border-2 border-emerald-400/40 pointer-events-none" />
+            )}
             <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent">
               <div className="flex items-center gap-1">
                 <span className="text-[8px] text-white/60 font-medium drop-shadow-md">You</span>
                 {screenSharing && <Monitor className="w-2 h-2 text-emerald-400 shrink-0" />}
+                {micMuted && <MicOff className="w-2 h-2 text-red-400 shrink-0" />}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Local Screen Share Preview - minimized by default to avoid mirror effect */}
+      {/* Local Screen Share Preview */}
       {screenSharing && (
-        <div className="fixed left-4 bottom-24 z-[9999]">
-          {showLocalPreview ? (
+        <div className="fixed left-4 bottom-24 z-[99999]">
+          {showLocalPreview !== false ? (
             <div className="premium-glass-card rounded-xl overflow-hidden border-shine shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
               style={{ width: '220px' }}>
               <div className="flex items-center justify-between px-2 py-1.5 bg-black/50">
@@ -643,7 +759,7 @@ export default function RoomMediaPanel({ socket, socketId, participants, userNam
       )}
 
       {/* Control dock */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)] pointer-events-auto">
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[99999] premium-glass-card rounded-2xl px-3 py-2 border-shine flex items-center gap-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)] pointer-events-auto">
         <button onClick={toggleMic}
           className={`p-2.5 rounded-xl transition-all duration-200 active:scale-90 ${micMuted ? 'bg-red-500/15 text-red-400 hover:bg-red-500/25' : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]'}`}
           title={micMuted ? 'Unmute mic' : 'Mute mic'}>
