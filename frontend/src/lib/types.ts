@@ -34,3 +34,14 @@ export interface ExecutionStats {
   exitCode: number | null;
   timedOut: boolean;
 }
+
+export interface ExecutionOutputStreamEvent {
+  type: 'stdout' | 'stderr';
+  data: string;
+}
+
+export interface ExecutionCompleteEvent {
+  output: string;
+  error: string;
+  stats: ExecutionStats;
+}

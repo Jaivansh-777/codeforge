@@ -82,7 +82,7 @@ export default function OutputPanel({ output, error, loading, stats, onCopy }: P
             <div className="w-full h-full" style={{ background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.5) 2px, rgba(255,255,255,0.5) 4px)' }} />
           </div>
 
-          {loading ? (
+          {loading && !hasOutput ? (
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-3">
                 <div className="relative">
@@ -95,7 +95,6 @@ export default function OutputPanel({ output, error, loading, stats, onCopy }: P
                   <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-bounce" style={{ animationDelay: '150ms' }} />
                   <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
-                {/* Matrix-style loading bar */}
                 <div className="w-48 h-1 rounded-full bg-white/[0.06] overflow-hidden mt-1">
                   <div className="h-full w-full bg-gradient-to-r from-transparent via-white/30 to-transparent rounded-full shimmer-loading" />
                 </div>

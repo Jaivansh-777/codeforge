@@ -6,6 +6,7 @@ import executeRouter from './routes/execute';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimit } from './middleware/rateLimit';
 import { createSocketServer } from './services/socket';
+import { dockerPool } from './services/dockerPool';
 
 const app = express();
 const server = http.createServer(app);
@@ -37,9 +38,26 @@ app.use(errorHandler);
 createSocketServer(server);
 
 async function start() {
+  await dockerPool.initialize();
+
   server.listen(config.port, () => {
     console.log(`CodeForge backend running on port ${config.port}`);
   });
 }
+
+function shutdown() {
+  console.log('Shutting down gracefully...');
+  dockerPool.shutdown().then(() => {
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
+  }).catch(() => {
+    process.exit(1);
+  });
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 
 start().catch(console.error);

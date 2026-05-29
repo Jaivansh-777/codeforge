@@ -1,30 +1,12 @@
-import { execSync } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import { dockerPool, type ExecOptions, type ExecResult } from './dockerPool';
+import { config } from '../config';
 
-const OUTPUT_LIMIT = 65536;
-const TIMEOUT = 10_000;
+const OUTPUT_LIMIT = config.execution.outputLimit;
 
-interface ExecResult {
-  output: string;
+interface AnalyzeResult {
   error: string;
-  exitCode: number | null;
-  executionTimeMs: number;
-  timedOut: boolean;
-  memoryUsedKb: number;
-  cpuTimeMs: number;
+  output: string;
 }
-
-const LANG_CONFIG: Record<string, { filename: string; compile?: string; run: string }> = {
-  python: { filename: 'main.py', run: 'python3 main.py' },
-  c: { filename: 'main.c', compile: 'gcc -O2 -Wall -o main main.c', run: './main' },
-  cpp: { filename: 'main.cpp', compile: 'g++ -O2 -Wall -o main main.cpp', run: './main' },
-  javascript: { filename: 'main.js', run: 'node main.js' },
-  php: { filename: 'main.php', run: 'php main.php' },
-  java: { filename: 'Main.java', compile: 'javac Main.java', run: 'java Main' },
-  assembly: { filename: 'main.asm', compile: 'nasm -f elf64 main.asm -o main.o && ld main.o -o main', run: './main' },
-};
 
 const LANGUAGE_NAMES: Record<string, string> = {
   python: 'Python', c: 'C', cpp: 'C++', javascript: 'JavaScript',
@@ -32,36 +14,26 @@ const LANGUAGE_NAMES: Record<string, string> = {
 };
 
 export function getSupportedLanguages() {
-  return Object.keys(LANG_CONFIG).map(key => ({
-    id: key,
-    name: LANGUAGE_NAMES[key] || key,
-  }));
+  return [
+    { id: 'python', name: 'Python' },
+    { id: 'c', name: 'C' },
+    { id: 'cpp', name: 'C++' },
+    { id: 'javascript', name: 'JavaScript' },
+    { id: 'php', name: 'PHP' },
+    { id: 'java', name: 'Java' },
+    { id: 'assembly', name: 'Assembly' },
+  ];
 }
 
-function execWithTimeout(cmd: string, cwd: string, timeout: number): { stdout: string; stderr: string; exitCode: number | null; timedOut: boolean } {
-  const start = Date.now();
-  try {
-    const out = execSync(cmd, { cwd, timeout, maxBuffer: OUTPUT_LIMIT, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-    return { stdout: out || '', stderr: '', exitCode: 0, timedOut: false };
-  } catch (e: any) {
-    const stdout = e.stdout || '';
-    const stderr = e.stderr || '';
-    const timedOut = e.killed || e.signal === 'SIGTERM' || (Date.now() - start) >= timeout;
-    return { stdout, stderr, exitCode: e.status ?? 1, timedOut };
-  }
-}
-
-function analyzeError(language: string, code: string, stderr: string, stdout: string, exitCode: number | null, timedOut: boolean): { error: string; output: string } {
+function analyzeError(language: string, code: string, stderr: string, stdout: string, exitCode: number | null, timedOut: boolean): AnalyzeResult {
   let error = stderr || '';
   let output = stdout || '';
 
   if (timedOut) {
-    return { error: '⏱ Execution timed out after 10 seconds.\nYour code may have an infinite loop or be too slow.', output };
+    return { error: 'Execution stopped: timeout reached.\nYour code may have an infinite loop or be too slow.', output };
   }
 
-  // C/C++ smart error detection
   if (language === 'c' || language === 'cpp') {
-    // Compile-time: format string warnings
     if (error.includes('-Wformat') || error.includes('format not a string literal')) {
       error = `⚠️ Format string warning detected in printf()!\n\n` +
         `Instead of:  printf(variable)\n` +
@@ -70,10 +42,7 @@ function analyzeError(language: string, code: string, stderr: string, stdout: st
         `             printf("%f", variable)   (for floats)\n\n` +
         `Original warning:\n${error}`;
     }
-
-    // Runtime: segmentation fault
     if (exitCode !== 0 && (error.includes('Segmentation fault') || error.includes('SIGSEGV') || error.includes('signal 11') || output.includes('Segmentation fault'))) {
-      // Check for printf with missing format string
       const printfMatch = code.match(/printf\s*\([^"'][^)]*\)/);
       if (printfMatch) {
         error = `💥 Segmentation fault (SIGSEGV) - crash detected!\n\n` +
@@ -91,19 +60,15 @@ function analyzeError(language: string, code: string, stderr: string, stdout: st
           `  • Array index out of bounds\n` +
           `  • Stack overflow (infinite recursion)\n` +
           `  • Using uninitialized memory\n\n` +
-          `Check your array accesses, pointer operations, and recursion depth.\n\n` +
           `Original error:\n${error}`;
       }
     }
-
-    // Runtime: non-zero exit with no stderr (silent crash)
     if (exitCode !== 0 && !error.trim()) {
       error = `Program exited with code ${exitCode}. This may indicate a runtime error.\n` +
         `Try compiling with -g and using a debugger, or add more error handling.\n`;
     }
   }
 
-  // C/C++ compile-time: general helpful suggestions
   if (language === 'c' || language === 'cpp') {
     if (error.includes('undefined reference')) {
       error = `🔗 Linker error: undefined reference.\n\n` +
@@ -122,7 +87,6 @@ function analyzeError(language: string, code: string, stderr: string, stdout: st
     }
   }
 
-  // Python runtime errors
   if (language === 'python') {
     if (error.includes('NameError')) {
       error = `🐍 NameError: variable not defined.\n\n` +
@@ -144,7 +108,6 @@ function analyzeError(language: string, code: string, stderr: string, stdout: st
     }
   }
 
-  // Java runtime errors
   if (language === 'java') {
     if (error.includes('Exception in thread')) {
       error = `☕ Java exception thrown!\n\n` +
@@ -153,7 +116,6 @@ function analyzeError(language: string, code: string, stderr: string, stdout: st
     }
   }
 
-  // JavaScript runtime errors
   if (language === 'javascript') {
     if (error.includes('ReferenceError')) {
       error = `🟨 ReferenceError: variable not defined.\n\n` +
@@ -171,65 +133,111 @@ function analyzeError(language: string, code: string, stderr: string, stdout: st
 }
 
 export async function executeCode(params: { language: string; code: string; input?: string }): Promise<ExecResult> {
-  const config = LANG_CONFIG[params.language];
-  if (!config) throw new Error(`Unsupported language: ${params.language}`);
-
-  console.log(`[execute] Starting ${params.language} execution`);
-  console.log(`[execute] Code length: ${params.code.length} chars`);
-
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codeforge-'));
+  console.log(`[execute] Starting ${params.language} execution via Docker pool`);
   const startTime = Date.now();
 
   try {
-    fs.writeFileSync(path.join(tmpDir, config.filename), params.code);
-    if (params.input) fs.writeFileSync(path.join(tmpDir, 'input.txt'), params.input);
+    const result = await dockerPool.execute({
+      language: params.language,
+      code: params.code,
+      input: params.input || '',
+      timeoutMs: config.execution.timeout * 1000,
+    });
 
-    let compileTime = 0;
-    if (config.compile) {
-      const compileStart = Date.now();
-      const compileResult = execWithTimeout(config.compile, tmpDir, TIMEOUT);
-      compileTime = Date.now() - compileStart;
-      if (compileResult.exitCode !== 0) {
-        const totalTime = Date.now() - startTime;
-        const analyzed = analyzeError(params.language, params.code, compileResult.stderr, compileResult.stdout, compileResult.exitCode, compileResult.timedOut);
-        console.log(`[execute] Compilation failed: exit=${compileResult.exitCode}`);
-        return {
-          output: analyzed.output,
-          error: analyzed.error,
-          exitCode: compileResult.exitCode,
-          executionTimeMs: totalTime,
-          timedOut: compileResult.timedOut,
-          memoryUsedKb: 0,
-          cpuTimeMs: totalTime,
-        };
-      }
-    }
-
-    const runResult = execWithTimeout(config.run, tmpDir, TIMEOUT);
     const totalTime = Date.now() - startTime;
 
-    console.log(`[execute] Execution complete: time=${totalTime}ms, exit=${runResult.exitCode}, output=${runResult.stdout.length}chars`);
-
-    // Analyze runtime results for smart errors
     const analyzed = analyzeError(
       params.language,
       params.code,
-      runResult.stderr,
-      runResult.stdout,
-      runResult.exitCode,
-      runResult.timedOut
+      result.error,
+      result.output,
+      result.exitCode,
+      result.timedOut,
     );
 
     return {
       output: analyzed.output.slice(0, OUTPUT_LIMIT),
       error: analyzed.error.slice(0, OUTPUT_LIMIT),
-      exitCode: runResult.exitCode,
+      exitCode: result.exitCode,
       executionTimeMs: totalTime,
-      timedOut: runResult.timedOut,
+      timedOut: result.timedOut,
       memoryUsedKb: 0,
       cpuTimeMs: totalTime,
     };
-  } finally {
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  } catch (err: any) {
+    return {
+      output: '',
+      error: err.message || 'Execution failed',
+      exitCode: -1,
+      executionTimeMs: Date.now() - startTime,
+      timedOut: false,
+      memoryUsedKb: 0,
+      cpuTimeMs: Date.now() - startTime,
+    };
+  }
+}
+
+export async function executeCodeStreaming(
+  params: { language: string; code: string; input?: string },
+  onStdout: (data: string) => void,
+  onStderr: (data: string) => void,
+): Promise<ExecResult> {
+  console.log(`[execute] Starting streaming ${params.language} execution`);
+
+  const startTime = Date.now();
+  let stdoutAccum = '';
+  let stderrAccum = '';
+
+  const wrappedStdout = (data: string) => {
+    stdoutAccum += data;
+    onStdout(data);
+  };
+
+  const wrappedStderr = (data: string) => {
+    stderrAccum += data;
+    onStderr(data);
+  };
+
+  try {
+    const result = await dockerPool.execute({
+      language: params.language,
+      code: params.code,
+      input: params.input || '',
+      timeoutMs: config.execution.timeout * 1000,
+      onStdout: wrappedStdout,
+      onStderr: wrappedStderr,
+    });
+
+    const totalTime = Date.now() - startTime;
+
+    const analyzed = analyzeError(
+      params.language,
+      params.code,
+      result.error || stderrAccum,
+      result.output || stdoutAccum,
+      result.exitCode,
+      result.timedOut,
+    );
+
+    return {
+      output: analyzed.output.slice(0, OUTPUT_LIMIT),
+      error: analyzed.error.slice(0, OUTPUT_LIMIT),
+      exitCode: result.exitCode,
+      executionTimeMs: totalTime,
+      timedOut: result.timedOut,
+      memoryUsedKb: 0,
+      cpuTimeMs: totalTime,
+    };
+  } catch (err: any) {
+    const totalTime = Date.now() - startTime;
+    return {
+      output: stdoutAccum.slice(0, OUTPUT_LIMIT),
+      error: (stderrAccum || err.message || 'Execution failed').slice(0, OUTPUT_LIMIT),
+      exitCode: -1,
+      executionTimeMs: totalTime,
+      timedOut: false,
+      memoryUsedKb: 0,
+      cpuTimeMs: totalTime,
+    };
   }
 }

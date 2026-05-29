@@ -3,11 +3,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import {
-  Play, Copy, Link, Users, Wifi, WifiOff, Lock, Unlock, Crown,
+  Play, Copy, Link, Wifi, WifiOff, Lock, Unlock, Crown,
   Terminal, FileCode, PanelRightClose, PanelRightOpen,
-  Loader2, AlertTriangle, X, MessageSquare, Pen
+  Loader2, AlertTriangle, X, MessageSquare, Pen,
 } from 'lucide-react';
-import RoomMediaPanel from '@/components/RoomMediaPanel';
 import Whiteboard from '@/components/Whiteboard';
 import toast, { Toaster } from 'react-hot-toast';
 import Editor from '@/components/Editor';
@@ -61,12 +60,14 @@ function RoomContent() {
   const roomId = params.roomId as string;
 
   const [joined, setJoined] = useState(false);
+  const [joinError, setJoinError] = useState('');
   const [userName, setUserName] = useState('');
   const [isHost, setIsHost] = useState(false);
   const [hostSocketId, setHostSocketId] = useState<string>('');
   const [socketId, setSocketId] = useState<string | null>(null);
   const [connected, setConnected] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('code');
+  const [locked, setLocked] = useState(false);
 
   const [language, setLanguage] = useState('python');
   const [code, setCode] = useState('');
@@ -83,8 +84,11 @@ function RoomContent() {
 
   const localEditRef = useRef(true);
   const socketRef = useRef<Socket | null>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const currentCodeRef = useRef('');
 
   const handleJoin = useCallback((name: string) => {
+    setJoinError('');
     setUserName(name);
     const socket = connectSocket();
     socketRef.current = socket;
@@ -97,25 +101,39 @@ function RoomContent() {
 
     socket.on('disconnect', () => {
       setConnected(false);
-      toast.error('Disconnected from server. You can still edit locally.', { duration: 5000 });
+      toast.error('Disconnected from server. Reconnecting...', { duration: 5000 });
     });
 
     socket.on('connect_error', () => {
       setConnected(false);
-      toast.error('Cannot connect to live server. You can still use the editor locally.', { duration: 5000 });
+      toast.error('Cannot connect to live server.', { duration: 5000 });
       setJoined(true);
+    });
+
+    socket.on('join-error', ({ message }: { message: string }) => {
+      setJoinError(message);
+    });
+
+    socket.on('kicked', ({ reason: r }: { reason: string }) => {
+      toast.error(r, { duration: 8000 });
+      disconnectSocket();
+      setJoined(false);
+      setUserName('');
+      setSocketId(null);
     });
 
     socket.on('room-state', (state) => {
       setIsHost(state.isHost);
       setHostSocketId(state.hostSocketId);
       setCode(state.code || CODE_TEMPLATES[state.language] || '');
+      currentCodeRef.current = state.code || CODE_TEMPLATES[state.language] || '';
       setLanguage(state.language || 'python');
       setInput(state.input || '');
       setOutput(state.output || '');
       setError(state.error || '');
       setStats(state.stats || null);
       setAllowEdit(state.allowEdit ?? true);
+      setLocked(state.locked ?? false);
       setParticipants(state.participants || []);
       setJoined(true);
 
@@ -126,18 +144,19 @@ function RoomContent() {
       }
     });
 
-    socket.on('code-change', ({ code: newCode }) => {
+    socket.on('code-change', ({ code: newCode }: { code: string }) => {
       setCode(newCode);
+      currentCodeRef.current = newCode;
     });
 
-    socket.on('language-change', ({ language: newLang }) => {
+    socket.on('language-change', ({ language: newLang }: { language: string }) => {
       setLanguage(newLang);
       setOutput('');
       setError('');
       setStats(null);
     });
 
-    socket.on('stdin-change', ({ input: newInput }) => {
+    socket.on('stdin-change', ({ input: newInput }: { input: string }) => {
       setInput(newInput);
     });
 
@@ -148,10 +167,18 @@ function RoomContent() {
       setStats(null);
     });
 
-    socket.on('output-change', ({ output: out, error: err, stats: st }) => {
+    socket.on('execution-output', ({ type, data }: { type: string; data: string }) => {
+      if (type === 'stdout') {
+        setOutput(prev => prev + data);
+      } else if (type === 'stderr') {
+        setError(prev => prev + data);
+      }
+    });
+
+    socket.on('execution-complete', ({ output: out, error: err, stats: st }) => {
       setLoading(false);
-      setOutput(out || '');
-      setError(err || '');
+      if (out) setOutput(out);
+      if (err) setError(err);
       setStats(st || null);
     });
 
@@ -159,15 +186,15 @@ function RoomContent() {
       setParticipants(p);
     });
 
-    socket.on('user-joined', ({ name: n }) => {
+    socket.on('user-joined', ({ name: n }: { name: string }) => {
       toast.success(`${n} joined the room`, { duration: 3000 });
     });
 
-    socket.on('user-left', ({ name: n }) => {
+    socket.on('user-left', ({ name: n }: { name: string }) => {
       if (n) toast(`${n} left`, { duration: 2000 });
     });
 
-    socket.on('host-change', ({ hostSocketId: hid }) => {
+    socket.on('host-change', ({ hostSocketId: hid }: { hostSocketId: string }) => {
       setHostSocketId(hid);
       if (socket.id === hid) {
         setIsHost(true);
@@ -176,10 +203,20 @@ function RoomContent() {
       }
     });
 
-    socket.on('edit-mode-change', ({ allowEdit: ae }) => {
+    socket.on('edit-mode-change', ({ allowEdit: ae }: { allowEdit: boolean }) => {
       setAllowEdit(ae);
       if (!isHost) localEditRef.current = ae;
       toast(ae ? 'Editing enabled by host' : 'Editing disabled by host', { duration: 2000 });
+    });
+
+    socket.on('room-locked', () => {
+      setLocked(true);
+      toast('Room locked by host', { duration: 2000 });
+    });
+
+    socket.on('room-unlocked', () => {
+      setLocked(false);
+      toast('Room unlocked by host', { duration: 2000 });
     });
 
     socket.on('chat-message', (msg: ChatMessage) => {
@@ -193,20 +230,30 @@ function RoomContent() {
 
   useEffect(() => {
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       disconnectSocket();
     };
   }, []);
 
-  const handleCodeChange = useCallback((newCode: string) => {
-    setCode(newCode);
+  const emitCodeChange = useCallback((newCode: string) => {
     if (connected && socketRef.current && localEditRef.current) {
       socketRef.current.emit('code-change', { code: newCode });
     }
   }, [connected]);
 
+  const handleCodeChange = useCallback((newCode: string) => {
+    setCode(newCode);
+    currentCodeRef.current = newCode;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      emitCodeChange(newCode);
+    }, 300);
+  }, [emitCodeChange]);
+
   const handleLanguageChange = useCallback((newLang: string) => {
     setLanguage(newLang);
     setCode(CODE_TEMPLATES[newLang] || '');
+    currentCodeRef.current = CODE_TEMPLATES[newLang] || '';
     setOutput('');
     setError('');
     setStats(null);
@@ -222,7 +269,7 @@ function RoomContent() {
     }
   }, [connected]);
 
-  const handleRun = useCallback(async () => {
+  const handleRun = useCallback(() => {
     if (!code.trim()) {
       toast.error('Write some code first');
       return;
@@ -240,6 +287,20 @@ function RoomContent() {
     if (!isHost || !connected || !socketRef.current) return;
     socketRef.current.emit('toggle-edit', { allowEdit: !allowEdit });
   }, [isHost, connected, allowEdit]);
+
+  const handleLockRoom = useCallback(() => {
+    if (!isHost || !connected || !socketRef.current) return;
+    if (locked) {
+      socketRef.current.emit('unlock-room');
+    } else {
+      socketRef.current.emit('lock-room');
+    }
+  }, [isHost, connected, locked]);
+
+  const handleKick = useCallback((targetSocketId: string) => {
+    if (!isHost || !connected || !socketRef.current) return;
+    socketRef.current.emit('kick-participant', { targetSocketId });
+  }, [isHost, connected]);
 
   const handleCopyInvite = () => {
     const url = window.location.href;
@@ -260,6 +321,28 @@ function RoomContent() {
   };
 
   const langInfo = LANG_DISPLAY[language] || { name: language, ext: 'txt' };
+
+  if (joinError) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#050505]">
+        <div className="max-w-md w-full px-6">
+          <div className="premium-glass-card rounded-[28px] p-8 text-center border-shine">
+            <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-6 h-6 text-red-400" />
+            </div>
+            <h2 className="text-lg font-bold text-white/80 mb-2">Cannot Join Room</h2>
+            <p className="text-sm text-white/50 mb-6">{joinError}</p>
+            <button
+              onClick={() => { setJoinError(''); setJoined(false); disconnectSocket(); }}
+              className="px-5 py-2 bg-white/10 text-white/70 rounded-xl text-sm font-medium hover:bg-white/20 transition-all"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!joined) {
     return <NamePrompt onJoin={handleJoin} />;
@@ -323,6 +406,21 @@ function RoomContent() {
                 )}
               </div>
 
+              {/* Lock/unlock room (host only) */}
+              {isHost && (
+                <button
+                  onClick={handleLockRoom}
+                  className={`p-1.5 rounded-lg text-xs transition-all ${
+                    locked
+                      ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                      : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]'
+                  }`}
+                  title={locked ? 'Unlock room' : 'Lock room'}
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                </button>
+              )}
+
               {/* Edit toggle (host only) */}
               {isHost && (
                 <button
@@ -338,6 +436,14 @@ function RoomContent() {
                 </button>
               )}
 
+              {/* Room locked indicator for non-host */}
+              {!isHost && locked && (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 text-amber-400/70 text-[10px] font-mono">
+                  <Lock className="w-3 h-3" />
+                  <span className="hidden sm:inline">Locked</span>
+                </div>
+              )}
+
               {/* Chat toggle */}
               <button
                 onClick={() => setShowChat(!showChat)}
@@ -350,16 +456,6 @@ function RoomContent() {
               >
                 <MessageSquare className="w-3.5 h-3.5" />
               </button>
-
-              {/* Audio call */}
-              <RoomMediaPanel
-                socket={socketRef.current}
-                socketId={socketId}
-                participants={participants}
-                userName={userName}
-                chatMessages={chatMessages}
-                onSendChat={handleSendChat}
-              />
 
               {/* Copy invite */}
               <button
@@ -392,14 +488,16 @@ function RoomContent() {
       {/* Main area */}
       <div className="relative z-10 flex-1 flex gap-3 sm:gap-4 p-3 sm:p-4 min-h-0 max-w-7xl mx-auto w-full">
         {/* Left sidebar: participants + chat */}
-        <div className={`${showChat ? 'hidden lg:flex' : 'flex'} flex-col gap-3 w-[200px] shrink-0`}>
+        <div className="flex flex-col gap-3 w-[200px] shrink-0">
           <ParticipantsPanel
             participants={participants}
             hostSocketId={hostSocketId}
             currentSocketId={socketId}
+            isHost={isHost}
+            onKick={handleKick}
           />
           {showChat && (
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 hidden lg:block">
               <RoomChat
                 messages={chatMessages}
                 onSend={handleSendChat}

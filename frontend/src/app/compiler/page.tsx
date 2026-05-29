@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Play, RotateCcw, Copy, Download, PanelRightClose, PanelRightOpen,
   Loader2, Terminal, Sparkles, FileCode, AlertTriangle, X, Users,
@@ -11,9 +11,9 @@ import LanguageSelector from '@/components/LanguageSelector';
 import InputPanel from '@/components/InputPanel';
 import OutputPanel from '@/components/OutputPanel';
 import { CODE_TEMPLATES } from '@/lib/templates';
-import { executeCode } from '@/lib/api';
+import { executeCodeStreaming } from '@/lib/streaming';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import type { ExecuteResponse, ExecutionStats } from '@/lib/types';
+import type { ExecutionStats } from '@/lib/types';
 
 const LANG_DISPLAY: Record<string, { name: string; ext: string }> = {
   python: { name: 'Python', ext: 'py' },
@@ -35,6 +35,7 @@ function CompilerContent() {
   const [stats, setStats] = useState<ExecutionStats | null>(null);
   const [showInput, setShowInput] = useState(true);
   const [backendError, setBackendError] = useState(false);
+  const streamRef = useRef<ReturnType<typeof executeCodeStreaming> | null>(null);
 
   useEffect(() => {
     setCode(CODE_TEMPLATES[language] || '');
@@ -44,10 +45,22 @@ function CompilerContent() {
     setBackendError(false);
   }, [language]);
 
-  const handleRun = useCallback(async () => {
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.cleanup();
+      }
+    };
+  }, []);
+
+  const handleRun = useCallback(() => {
     if (!code.trim()) {
       toast.error('Write some code first');
       return;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.cleanup();
     }
 
     setLoading(true);
@@ -56,35 +69,54 @@ function CompilerContent() {
     setStats(null);
     setBackendError(false);
 
-    try {
-      const result: ExecuteResponse = await executeCode(language, code, input);
-      setOutput(result.output || '');
-      setError(result.error || '');
+    let finalOutput = '';
+    let finalError = '';
+
+    const onStdout = (data: string) => {
+      finalOutput += data;
+      setOutput(finalOutput);
+    };
+
+    const onStderr = (data: string) => {
+      finalError += data;
+      setError(finalError);
+    };
+
+    const onComplete = (result: any) => {
       setStats({
-        executionTimeMs: result.executionTimeMs,
-        memoryUsedKb: result.memoryUsedKb,
-        cpuTimeMs: result.cpuTimeMs,
-        exitCode: result.exitCode,
-        timedOut: result.timedOut,
+        executionTimeMs: result.stats.executionTimeMs,
+        memoryUsedKb: result.stats.memoryUsedKb,
+        cpuTimeMs: result.stats.cpuTimeMs,
+        exitCode: result.stats.exitCode,
+        timedOut: result.stats.timedOut,
       });
-      if (!result.output && !result.error) {
-        setOutput('No output returned');
-      }
-      if (result.exitCode === 0) {
+      setOutput(result.output || finalOutput || 'No output returned');
+      setError(result.error || finalError);
+      setLoading(false);
+
+      if (result.stats.exitCode === 0) {
         toast.success('Executed successfully');
-      } else if (result.timedOut) {
+      } else if (result.stats.timedOut) {
         toast.error('Execution timed out');
-      } else if (result.error) {
+      } else if (result.error || finalError) {
         toast.error('Runtime error');
       }
-    } catch (e: any) {
-      const msg = e.message || 'Execution failed';
-      setError(msg);
+    };
+
+    const onError = (message: string) => {
+      setError(message);
       setBackendError(true);
-      toast.error(msg, { duration: 5000 });
-    } finally {
       setLoading(false);
-    }
+      toast.error(message, { duration: 5000 });
+    };
+
+    streamRef.current = executeCodeStreaming(
+      { language, code, input: input || '' },
+      onStdout,
+      onStderr,
+      onComplete,
+      onError,
+    );
   }, [code, language, input]);
 
   const handleReset = () => {
