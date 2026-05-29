@@ -1,7 +1,7 @@
 import Dockerode from 'dockerode';
 import { config } from '../config';
 
-const POOL_SIZE_PER_LANG = 3;
+const POOL_SIZE_PER_LANG = config.pool.sizePerLang;
 const CONTAINER_IMAGE = 'codeforge-executor:latest';
 const CONTAINER_USER = '1000:1000';
 const WORK_DIR = '/code';
@@ -66,6 +66,8 @@ class DockerPool {
   private pools: Map<string, ContainerSlot[]> = new Map();
   private queues: Map<string, QueueEntry[]> = new Map();
   private initialized = false;
+  private healthInterval: ReturnType<typeof setInterval> | null = null;
+  private shuttingDown = false;
 
   constructor() {
     this.docker = new Dockerode();
@@ -73,7 +75,28 @@ class DockerPool {
 
   async initialize(): Promise<void> {
     console.log('[dockerPool] Initializing container pool...');
+
+    try {
+      await this.docker.ping();
+      console.log('[dockerPool] Docker daemon is reachable');
+    } catch {
+      throw new Error(
+        'Docker daemon is not reachable. Make sure Docker is installed and running, ' +
+        'and the current user has permission to access the Docker socket.'
+      );
+    }
+
+    try {
+      const image = await this.docker.getImage(CONTAINER_IMAGE).inspect();
+      console.log(`[dockerPool] Image ${CONTAINER_IMAGE} found (${(image.Size || 0) / 1024 / 1024}MB)`);
+    } catch {
+      throw new Error(
+        `Docker image "${CONTAINER_IMAGE}" not found. Run: docker build -t ${CONTAINER_IMAGE} .`
+      );
+    }
+
     const languages = Object.keys(LANG_CONFIG);
+    let anyCreated = false;
 
     for (const lang of languages) {
       const slots: ContainerSlot[] = [];
@@ -91,6 +114,7 @@ class DockerPool {
             busy: false,
           };
           slots.push(slot);
+          anyCreated = true;
           console.log(`[dockerPool] Created ${lang} container #${i} (${container.id})`);
         } catch (err) {
           console.error(`[dockerPool] Failed to create ${lang} container #${i}:`, err);
@@ -98,12 +122,19 @@ class DockerPool {
       }
     }
 
-    setInterval(() => this.healthCheck(), 30000);
+    if (!anyCreated) {
+      throw new Error(
+        'Failed to create any Docker containers. Check Docker resources and permissions.'
+      );
+    }
+
+    this.healthInterval = setInterval(() => this.healthCheck(), 30000);
     this.initialized = true;
     console.log('[dockerPool] Pool initialized successfully');
   }
 
   private async healthCheck(): Promise<void> {
+    if (this.shuttingDown || !this.initialized) return;
     for (const [lang, slots] of this.pools) {
       for (let i = 0; i < slots.length; i++) {
         const slot = slots[i];
@@ -442,20 +473,34 @@ class DockerPool {
   }
 
   async shutdown(): Promise<void> {
+    if (this.shuttingDown) return;
+    this.shuttingDown = true;
+    this.initialized = false;
     console.log('[dockerPool] Shutting down...');
+
+    if (this.healthInterval) {
+      clearInterval(this.healthInterval);
+      this.healthInterval = null;
+    }
+
+    const allSlots: ContainerSlot[] = [];
     for (const [, slots] of this.pools) {
-      for (const slot of slots) {
+      allSlots.push(...slots);
+    }
+
+    await Promise.allSettled(
+      allSlots.map(async (slot) => {
         try {
-          await slot.container.stop({ t: 3 });
+          await slot.container.stop({ t: 2 });
         } catch {}
         try {
           await slot.container.remove({ force: true });
         } catch {}
-      }
-    }
+      })
+    );
+
     this.pools.clear();
     this.queues.clear();
-    this.initialized = false;
     console.log('[dockerPool] Shutdown complete');
   }
 }

@@ -45,7 +45,11 @@ async function start() {
   });
 }
 
+let shuttingDown = false;
+
 function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log('Shutting down gracefully...');
   dockerPool.shutdown().then(() => {
     server.close(() => {
