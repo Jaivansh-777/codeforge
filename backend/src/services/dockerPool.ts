@@ -1,5 +1,6 @@
 import Dockerode from 'dockerode';
 import { config } from '../config';
+import { executeLocal } from './localExecutor';
 
 const POOL_SIZE_PER_LANG = config.pool.sizePerLang;
 const CONTAINER_IMAGE = 'codeforge-executor:latest';
@@ -66,6 +67,7 @@ class DockerPool {
   private pools: Map<string, ContainerSlot[]> = new Map();
   private queues: Map<string, QueueEntry[]> = new Map();
   private initialized = false;
+  private localMode = false;
   private healthInterval: ReturnType<typeof setInterval> | null = null;
   private shuttingDown = false;
 
@@ -80,19 +82,22 @@ class DockerPool {
       await this.docker.ping();
       console.log('[dockerPool] Docker daemon is reachable');
     } catch {
-      throw new Error(
-        'Docker daemon is not reachable. Make sure Docker is installed and running, ' +
-        'and the current user has permission to access the Docker socket.'
-      );
+      console.warn('[dockerPool] Docker daemon not reachable — falling back to local execution');
+      this.localMode = true;
+      this.initialized = true;
+      console.log('[dockerPool] Pool initialized in local mode');
+      return;
     }
 
     try {
       const image = await this.docker.getImage(CONTAINER_IMAGE).inspect();
       console.log(`[dockerPool] Image ${CONTAINER_IMAGE} found (${(image.Size || 0) / 1024 / 1024}MB)`);
     } catch {
-      throw new Error(
-        `Docker image "${CONTAINER_IMAGE}" not found. Run: docker build -t ${CONTAINER_IMAGE} .`
-      );
+      console.warn(`[dockerPool] Image ${CONTAINER_IMAGE} not found — falling back to local execution`);
+      this.localMode = true;
+      this.initialized = true;
+      console.log('[dockerPool] Pool initialized in local mode');
+      return;
     }
 
     const languages = Object.keys(LANG_CONFIG);
@@ -123,18 +128,20 @@ class DockerPool {
     }
 
     if (!anyCreated) {
-      throw new Error(
-        'Failed to create any Docker containers. Check Docker resources and permissions.'
-      );
+      console.warn('[dockerPool] Failed to create any containers — falling back to local execution');
+      this.localMode = true;
+      this.initialized = true;
+      console.log('[dockerPool] Pool initialized in local mode');
+      return;
     }
 
     this.healthInterval = setInterval(() => this.healthCheck(), 30000);
     this.initialized = true;
-    console.log('[dockerPool] Pool initialized successfully');
+    console.log('[dockerPool] Pool initialized successfully (Docker mode)');
   }
 
   private async healthCheck(): Promise<void> {
-    if (this.shuttingDown || !this.initialized) return;
+    if (this.shuttingDown || !this.initialized || this.localMode) return;
     for (const [lang, slots] of this.pools) {
       for (let i = 0; i < slots.length; i++) {
         const slot = slots[i];
@@ -199,6 +206,10 @@ class DockerPool {
       throw new Error('Docker pool not initialized');
     }
 
+    if (this.localMode) {
+      return this.executeLocalFallback(options);
+    }
+
     const langConfig = LANG_CONFIG[options.language];
     if (!langConfig) {
       throw new Error(`Unsupported language: ${options.language}`);
@@ -210,7 +221,7 @@ class DockerPool {
 
     const slots = this.pools.get(options.language);
     if (!slots || slots.length === 0) {
-      throw new Error(`No containers available for language: ${options.language}`);
+      return this.executeLocalFallback(options);
     }
 
     const slot = this.acquireContainer(options.language);
@@ -230,6 +241,41 @@ class DockerPool {
       return await this.executeInSlot(slot, langConfig, execId, workDir, options, timeoutMs);
     } finally {
       this.releaseContainer(slot);
+    }
+  }
+
+  private async executeLocalFallback(options: ExecOptions): Promise<ExecResult> {
+    const startTime = Date.now();
+    try {
+      const result = await executeLocal(
+        {
+          language: options.language,
+          code: options.code,
+          input: options.input,
+          timeoutMs: options.timeoutMs ?? config.execution.timeout * 1000,
+        },
+        options.onStdout,
+        options.onStderr,
+      );
+      return {
+        output: result.stdout,
+        error: result.stderr,
+        exitCode: result.exitCode,
+        executionTimeMs: Date.now() - startTime,
+        timedOut: result.timedOut,
+        memoryUsedKb: 0,
+        cpuTimeMs: Date.now() - startTime,
+      };
+    } catch (err: any) {
+      return {
+        output: '',
+        error: err.message || 'Execution failed',
+        exitCode: -1,
+        executionTimeMs: Date.now() - startTime,
+        timedOut: false,
+        memoryUsedKb: 0,
+        cpuTimeMs: Date.now() - startTime,
+      };
     }
   }
 
@@ -483,21 +529,23 @@ class DockerPool {
       this.healthInterval = null;
     }
 
-    const allSlots: ContainerSlot[] = [];
-    for (const [, slots] of this.pools) {
-      allSlots.push(...slots);
-    }
+    if (!this.localMode) {
+      const allSlots: ContainerSlot[] = [];
+      for (const [, slots] of this.pools) {
+        allSlots.push(...slots);
+      }
 
-    await Promise.allSettled(
-      allSlots.map(async (slot) => {
-        try {
-          await slot.container.stop({ t: 2 });
-        } catch {}
-        try {
-          await slot.container.remove({ force: true });
-        } catch {}
-      })
-    );
+      await Promise.allSettled(
+        allSlots.map(async (slot) => {
+          try {
+            await slot.container.stop({ t: 2 });
+          } catch {}
+          try {
+            await slot.container.remove({ force: true });
+          } catch {}
+        })
+      );
+    }
 
     this.pools.clear();
     this.queues.clear();
